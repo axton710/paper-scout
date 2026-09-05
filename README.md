@@ -1,142 +1,182 @@
-# Paper Scout 🧭
+# Paper Scout
 
-> 多 Agent 论文调研助手：给 1–2 篇**种子论文**，自动产出一份引用可追溯的调研报告——**必读清单 + 领域综述 + 创新点/研究空白**。
->
-> A multi-agent literature-scouting assistant built on **DeepSeek Harness (dsh)** × **AMiner MCP**.
+从 1-2 篇种子论文出发，生成一份可回看中间证据的文献调研报告。
 
-面向研究生"读论文、找创新点"的真实场景：单个 agent 做综述往往**漏**（广度不够）、**浅**（不深挖）、**不主动找 gap**。Paper Scout 把这件事拆给五个专职 agent 分工协作——规划、并行检索精读、综述、创新点发掘、核验——用多智能体换来广度、上下文隔离与批判性。
+Paper Scout 面向“我需要快速进入一个研究方向，但不想把检索、筛选、归纳和找研究缺口混在一次模型调用里”的场景。它使用 DeepSeek Harness 运行多个角色，通过 AMiner MCP 获取论文元数据和摘要，输出必读清单、领域综述与待验证的研究方向。
 
----
+项目重点不在于堆叠 Agent 数量，而是让检索协作产生可观察的决策：首轮 Searcher 独立探索，结果汇总为共享证据板；Coordinator 根据重叠和覆盖缺口，只派发少量定向补搜任务。
 
-## 效果
+## 输出
 
-给定两篇种子论文（示例方向：*工业缺陷/异常图像生成*），一条命令产出一份 Markdown 报告，含三段：
+一次完整运行会生成：
 
-1. **必读清单**：跨子方向去重、按 被引档位 × 新近度 × 是否精读 排序，每篇附"为什么读"。
-2. **领域综述**：按方法流派分类，给出共识、分歧、技术演变时间线。
-3. **创新点 / 研究空白**：每条 grounded 到具体论文（现状证据 + 缺口），并经核验闭环剔除"假新颖"。
+- 按被引档位、新近度和是否读取摘要排序的论文清单；
+- 按技术路线组织的中文领域综述；
+- 以具体论文为依据的候选研究缺口，经过生成、核验和回改；
+- 可检查的计划、语料、共享证据板、补搜决策和成本记录。
 
-样例报告见 [`reports/`](reports/)。
+最终报告输出到 `reports/report-<timestamp>.md`。中间产物保留在 `reports/`，用于追溯“为什么补搜”“哪位 Searcher 发现了哪篇论文”和“结论来自摘要还是搜索结果”。
 
----
+## 为什么需要多 Agent
+
+文献调研是开放任务：开始时不知道有哪些子方向，也不知道哪一条检索线会遗漏关键工作。让一个 Agent 在一个上下文内完成所有工作，常见问题是检索角度被最早的结果锚定，或重复阅读同一批论文。
+
+Paper Scout 使用固定的两轮协作协议：
+
+1. **独立探索**：Planner 将领域拆为 2-6 个子方向，为每个方向定义覆盖范围和排除范围。首轮 Searcher 保持独立上下文，以不同检索词探索。
+2. **共享证据**：Python 将首轮结果按论文 ID 合并。每篇论文保留发现它的 Agent、子方向、摘要级证据和来源类型；每个子方向保留已覆盖结论与未解问题。
+3. **定向补搜**：Coordinator 只读取压缩后的证据板，不读取完整对话，也不调用工具。它最多派发 2 个补搜任务，明确补什么证据、用哪些检索词，并传递可复用的已精读论文 ID。
+4. **综合与核验**：合并所有语料后，Synthesizer 写综述；Gap 和 Verifier 在最多两轮内生成、批评和收窄候选研究方向。
+
+这使一个 Agent 的发现能改变后续任务，同时通过并发上限、详情读取上限和固定轮次约束成本。
 
 ## 架构
 
-三层：**Python 编排层**（导演）· **dsh agent 推理层**（大脑）· **AMiner MCP 数据层**（论文库）。
-
 ```mermaid
 flowchart LR
-    seed([种子论文<br/>标题]) --> P[Planner<br/>自适应拆子方向]
-    P --> S1[Searcher ×K<br/>并行·独立上下文]
-    S1 --> T[Triage<br/>Python·排序]
-    T --> SY[Synthesizer<br/>综述]
-    SY --> G[Gap<br/>找创新点]
-    G <-->|生成→批评→回改 ≤2轮| V[Verifier<br/>核验]
-    V --> R([Markdown 报告<br/>+ 成本小结])
-    S1 -.ReAct 自主调用.-> AMiner[(AMiner MCP<br/>26 学术工具)]
-    P -.-> AMiner
+    Seed[种子论文] --> Planner[Planner]
+    Planner --> Searchers[首轮 Searcher x K\n独立上下文，最多 3 路并发]
+    Searchers --> Board[共享证据板\n论文来源、证据、覆盖缺口]
+    Board --> Coordinator[Coordinator\n最多 2 项定向补搜]
+    Coordinator --> Followups[补搜 Searcher]
+    Searchers --> Triage[Triage\n去重与排序]
+    Followups --> Triage
+    Triage --> Synthesizer[Synthesizer]
+    Synthesizer --> Gap[Gap]
+    Gap <--> Verifier[Verifier\n最多 2 轮]
+    Verifier --> Report[Markdown 报告]
+
+    Planner -. AMiner MCP .-> Data[(AMiner)]
+    Searchers -. AMiner MCP .-> Data
+    Followups -. AMiner MCP .-> Data
 ```
 
-- **Planner**：定位种子（`search_paper_by_title` → `get_paper_detail`），**按领域宽窄自适应决定拆几个子方向**（2–6，带取舍理由）。
-- **Searcher ×K**：每个子方向一个 agent，**并行、各自独立上下文**，以 ReAct 自主 `search_paper` → 精读摘要 → 沿 `get_paper_citations` / `recommend_paper` 扩展。
-- **Triage**：纯 Python 确定性排序，产出必读清单。
-- **Synthesizer**：把语料综合成结构化综述。
-- **Gap ⇄ Verifier**：**Reflection 闭环**——Gap 生成候选，Verifier 严格判 `keep/weak/drop`，把不过关的连同理由打回 Gap 收窄重出，最多 2 轮。
+### 角色与边界
 
----
+| 模块 | LLM 的职责 | 代码承担的约束 |
+|---|---|---|
+| Planner | 定位种子论文，划分子方向和检索边界 | 子方向数量限制为 2-6 |
+| Searcher | 决定检索词的具体使用方式，筛选和总结论文 | 每个方向最多 8 篇候选、4 篇摘要精读 |
+| 共享证据板 | 无 | 按 ID 去重，保留多 Agent 的独立观察与证据来源 |
+| Coordinator | 判断重叠、覆盖缺口和补搜角度 | 最多 2 个任务，每个最多 3 个检索词 |
+| 补搜 Searcher | 为指定缺口寻找正反证据 | 每项最多精读 2 篇，复用已有详情 |
+| Triage | 无 | 确定性排序，影响力优先，新近度和精读状态为辅 |
+| Gap / Verifier | 提出、批评并收窄研究方向 | 最多两轮；`keep`、`weak`、`drop` 结构化输出 |
 
-## 核心设计
+模型的决策集中在任务拆分、检索策略、证据归纳和缺口判断；并发、预算、缓存有效性、去重、排序和终止条件由 Python 控制。
 
-| 设计 | 说明 |
+## 证据与成本
+
+Searcher 会优先使用 `search_paper` 获取论文候选，只对最重要的候选调用 `get_paper_detail` 阅读摘要。补搜任务会带上首轮已精读论文的 ID，避免重复读取同一摘要。
+
+每次端到端运行都会统计 AMiner 工具调用与模型输入/输出 token。下列文件构成一次运行的协作轨迹：
+
+| 文件 | 内容 |
 |---|---|
-| **Python 自建多 Agent 编排** | Orchestrator-Worker + Pipeline；每个角色一次隔离的 `harness.run`，编排顺序、并行、成本纪律都在代码里可控。 |
-| **MCP 自主 tool-use** | 通过 MCP 把 AMiner 26 个学术工具挂成 agent 原生能力，检索策略由 agent 自主决策，而非写死。 |
-| **Reflection 闭环** | 生成→批评→回改重出→再批评；每条创新点强制落到具体论文，抑制大模型"假新颖"。 |
-| **代码编排 vs subagent 委派** | 流程已知固定 → 选代码编排换取确定性、成本可控、中间结果可缓存；开放式任务才该用 agent 自主委派。 |
-| **成本可观测** | 从会话事件流统计每次运行的 AMiner 调用次数与 token；广度走限免接口、只对入选 top-N 调用计费的全文接口。 |
-| **LLM-JSON 健壮性** | prompt 约束 + `json-repair` 兜底 + 列表归一，三重保险让结构化产出稳定。 |
+| `plan.json` | 种子论文、子方向、`scope`、`exclude` 和检索词 |
+| `corpus_<i>.json` | 首轮某一子方向的论文笔记与覆盖结论 |
+| `evidence_board.json` | 合并后的论文来源、证据和覆盖信息 |
+| `followups.json` | Coordinator 的补搜理由、范围、检索词和复用论文 |
+| `followup_corpus_<i>.json` | 定向补搜得到的语料 |
+| `report-<timestamp>.md` | 必读清单、综述、候选研究方向和成本小结 |
 
----
+缓存只在子方向名称、覆盖范围、排除范围和检索词完全一致时复用；这些字段变化后会自动重新检索，避免 Coordinator 根据过期语料做调度。
+
+一次以工业缺陷/异常图像生成为主题的真实运行中，Coordinator 从首轮语料派发了“合成异常质量评估的反证”和“one-shot 条件下的生成式异常”两项补搜，最终汇总 36 篇论文。该次完整运行共调用 AMiner 71 次。这个数字是一次实例，不代表稳定基准；调用量取决于 Planner 的拆分、Coordinator 的决策和数据源响应。
 
 ## 快速开始
 
-### 前置
+### 前置条件
 
-- **dsh 源码仓库**（提供 agent runtime）：[deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)，`pnpm install && pnpm run build`（需 Node ^22.19 || >=24、pnpm）。
-- **Python** 3.10+
-- **DeepSeek API key**（agent 的模型）+ **AMiner Token**（数据源，[open.aminer.cn](https://open.aminer.cn) 申请）。
+- Python 3.10+；
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 源码仓库，完成 `pnpm install && pnpm run build`；
+- DeepSeek API Key；
+- [AMiner](https://open.aminer.cn) Token。
 
 ### 安装
 
 ```bash
-git clone https://github.com/<你的用户名>/paper-scout.git
+git clone https://github.com/<your-account>/paper-scout.git
 cd paper-scout
-python -m venv .venv && . .venv/bin/activate
+python -m venv .venv
+. .venv/bin/activate
 pip install deepseek-harness-sdk json-repair
 ```
 
 ### 配置
 
-1. **密钥**：在项目根建 `.env`（已被 gitignore）：
-   ```
-   AMINER_TOKEN=你的 AMiner token
-   DEEPSEEK_API_KEY=sk-你的 DeepSeek key
-   ```
-2. **dsh 仓库路径**：改两处指向你本地的 dsh 检出：
-   - `dsh-src.sh` 里 `bin.ts` 的绝对路径；
-   - `paperscout/harness.py` 顶部的 `REPO`。
-   > AMiner MCP 的挂载配置见 [`patches/aminer.patch.yml`](patches/aminer.patch.yml)，无需改动。
+在项目根目录创建 `.env`：
+
+```bash
+AMINER_TOKEN=your_aminer_token
+DEEPSEEK_API_KEY=your_deepseek_api_key
+```
+
+将以下本机路径改为你的 DeepSeek Harness 检出目录：
+
+- `dsh-src.sh` 中的 `apps/cli/src/bin.ts`；
+- `paperscout/harness.py` 中的 `REPO`。
+
+AMiner MCP 的配置位于 [`patches/aminer.patch.yml`](patches/aminer.patch.yml)。
 
 ### 运行
 
-```bash
-# 1) 规划：种子论文 → 自适应拆子方向（结果存 reports/plan.json）
-python run_planner.py "Training-Free Industrial Defect Generation with Diffusion Models" \
-                      "AnomalyDiffusion: Few-Shot Anomaly Image Generation with Diffusion Model"
+先用种子论文生成计划：
 
-# 2) 全流程：检索 → 综述 → 创新点 → 核验 → 报告（存 reports/report-<时间戳>.md）
+```bash
+python run_planner.py \
+  "Training-Free Industrial Defect Generation with Diffusion Models" \
+  "AnomalyDiffusion: Few-Shot Anomaly Image Generation with Diffusion Model"
+```
+
+再执行完整流程：
+
+```bash
 python run_pipeline.py
 ```
 
-> `run_pipeline.py` 会复用 `reports/corpus_*.json` 缓存；想全新跑就先删掉它们。
-> 单独调试某个子方向：`python run_searcher.py <序号>`。
+调试单个首轮 Searcher：
 
----
+```bash
+python run_searcher.py 0
+```
+
+## 测试
+
+以下测试不调用模型、AMiner 或网络，验证共享证据板、多 Agent 观察保留、补搜任务上限、已有详情复用和缓存失效规则：
+
+```bash
+python -m unittest -v test_collaboration.py
+```
 
 ## 项目结构
 
-```
+```text
 paper-scout/
 ├── paperscout/
-│   ├── harness.py       dsh 启动配置 + agent 调用 + 成本记账 + JSON 解析
-│   ├── planner.py       M1 规划：种子 → 自适应子方向
-│   ├── searcher.py      M2 检索：一个子方向 → 结构化语料
-│   ├── corpus.py        M3 合并/去重/排序（Triage）
-│   ├── synthesizer.py   M4 综述
-│   ├── gap.py           M5 Gap + Verifier + Reflection 闭环
-│   └── report.py        M6 报告组装
-├── run_planner.py       入口：规划
-├── run_searcher.py      入口：单子方向检索
-├── run_pipeline.py      入口：端到端
-├── patches/aminer.patch.yml   把 AMiner MCP 挂进 dsh 的补丁
-├── dsh-src.sh           用源码 dsh 启动（经 tsx）
-└── reports/             产物：plan.json / corpus_*.json / report-*.md
+│   ├── harness.py       dsh 配置、Agent 调用、JSON 解析和成本统计
+│   ├── planner.py       种子论文到子方向计划
+│   ├── searcher.py      检索、摘要精读和结构化论文笔记
+│   ├── corpus.py        去重、共享证据板、排序和紧凑渲染
+│   ├── coordinator.py   共享证据板到定向补搜任务
+│   ├── synthesizer.py   领域综述生成
+│   ├── gap.py           Gap、Verifier 与反思闭环
+│   └── report.py        Markdown 报告组装
+├── run_planner.py       生成 `plan.json`
+├── run_searcher.py      调试一个 Searcher
+├── run_pipeline.py      端到端编排入口
+├── patches/             AMiner MCP 挂载配置
+└── test_collaboration.py
 ```
 
----
+## 局限
 
-## 成本
-
-每次运行报告末尾会给出 AMiner 调用次数与 token 用量。省钱手法：广度检索走**限免**接口 + 批量部分摘要，只对入选 top-N 论文调用**计费**的 `get_paper_detail`（每个子方向精读上限默认 4 篇）。
-
-## 局限与路线图
-
-- **数据源仅 AMiner**：只有**向后参考文献**（无"谁引用了它"）、只有摘要非全文。
-- **子方向串行**执行（并行是明确的优化项）；Searcher 的广度检索存在一定冗余。
-- 语料缓存按序号存，改 plan 后需清缓存。
-- **路线图**：PDF 种子输入（读全文增强规划）· 跨运行论文记忆库 · 并行 Searcher · 召回率评测集 · 缓存按内容 hash。
+- 证据来自 AMiner 返回的论文元数据与摘要，不读取 PDF 全文；报告中的研究方向应理解为待验证候选，而非对领域新颖性的证明。
+- Coordinator 的价值尚未在固定 gold set 上完成定量评测。下一步需要以相同模型和工具预算，对比静态分工与自适应补搜的论文召回、子方向覆盖率、重复详情读取率、耗时和成本。
+- 数据源和模型输出均会影响检索结果。系统记录证据来源和运行轨迹，但不保证数据源覆盖完整或模型判断无误。
+- 运行依赖本地 DeepSeek Harness 源码路径，尚未打包为可安装的独立命令行工具。
 
 ## 致谢
 
-- [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) —— 一切皆插件的开源 agent 框架，提供 runtime 与 MCP 客户端。
-- [AMiner](https://open.aminer.cn) —— 学术数据与 MCP 服务。
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：Agent runtime 与 MCP 客户端。
+- [AMiner](https://open.aminer.cn)：学术论文数据与 MCP 服务。

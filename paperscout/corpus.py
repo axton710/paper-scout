@@ -28,6 +28,44 @@ def merge_corpora(corpora: list[dict]) -> list[dict]:
     return list(by_id.values())
 
 
+def build_evidence_board(corpora: list[dict]) -> dict:
+    """合并首轮发现，供 Coordinator 判断覆盖缺口而非读取 agent 对话。"""
+    papers: dict[str, dict] = {}
+    coverage = []
+    for corpus in corpora:
+        subtopic = corpus.get("subtopic", "")
+        agent = corpus.get("agent", subtopic)
+        coverage.append({
+            "agent": agent,
+            "subtopic": subtopic,
+            "scope": corpus.get("scope", ""),
+            "exclude": corpus.get("exclude", ""),
+            "covered_claims": corpus.get("covered_claims", []),
+            "open_questions": corpus.get("open_questions", []),
+        })
+        for paper in corpus.get("papers", []):
+            paper_id = paper.get("id")
+            if not paper_id:
+                continue
+            entry = papers.setdefault(paper_id, {
+                "id": paper_id,
+                "title": paper.get("title", ""),
+                "year": paper.get("year"),
+                "found_by": [],
+                "evidence": [],
+            })
+            if agent not in entry["found_by"]:
+                entry["found_by"].append(agent)
+            entry["evidence"].append({
+                "subtopic": subtopic,
+                "source": "abstract" if paper.get("read_detail") else "search_result",
+                "method": paper.get("method", ""),
+                "contribution": paper.get("contribution", ""),
+                "limitation": paper.get("limitation", ""),
+            })
+    return {"coverage": coverage, "papers": list(papers.values())}
+
+
 def rank(papers: list[dict], now_year: int = 2026) -> list[dict]:
     """按 影响力(被引档位) + 新近度 + 是否精读 排序，产出必读顺序。"""
     def score(p: dict) -> float:
