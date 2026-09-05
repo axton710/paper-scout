@@ -1,0 +1,146 @@
+{
+  "version": 6,
+  "record": {
+    "identity": {
+      "createdAt": 1788543645205,
+      "cwd": "/Users/axton/paper-scout/workspace",
+      "isSeeded": false,
+      "inheritedEventCount": 0
+    },
+    "rows": {
+      "title": {
+        "ver": 1,
+        "seq": 14254,
+        "val": "你是“核验 agent”，以**严格"
+      },
+      "titleInput": {
+        "ver": 3,
+        "seq": 14254,
+        "val": {
+          "first": {
+            "seq": 7,
+            "text": "你是“核验 agent”，以**严格、挑剔**的标准把关，目的是挤掉“假新颖”。下面是一批候选创新点(gaps)和论文语料。逐条判定：\n- verdict：keep | weak | drop。\n- **keep 门槛要高**：只有语料中确实**没有方向相近的工作**、且缺口具体可做，才判 keep。\n- 只要语料里存在**方向相近、部分重叠、或该 gap 偏宽泛**，就判 **weak** 并指出与哪篇重叠、该如何收窄。\n- 已被现有工作基本覆盖，判 **drop** 并点名论文。\n- 抱着“能挑刺就挑刺”的心态——初版 gap 里通常会有若干 weak，请如实标出，不要为了好看一律 keep。\n- reason：简要理由（点名论文）；对 keep/weak 给一句更聚焦的改写 refined。\n\n候选 gaps：\n{\"gaps\": [{\"gap\": \"把异常合成从「离线、静态、与下游解耦」的开环数据供给，升级为「由下游检测器错误/不确定度驱动的闭环主动合成」：以检测器在无标注验证/现场数据上的残差图与不确定度（而非已知缺陷形态或人工规则）作为逐轮反馈信号，动态调整下一轮合成的异常形态、强度与区域，使合成器持续反哺、主动填补检测器盲区；并以 DefectFill 式单轮质检、GLASS 式离线贴边合成为对照做消融，证明逐轮闭环带来的增益来源。\", \"evidence\": \"语料中所有合成器与下游均为单向开环数据供给：DefectFill 的低保真样本筛选只是对生成结果做一次性子质检，不随下游在真实数据上的表现更新；GLASS 的梯度上升是把合成推向正常流形边界的离线特征空间操作，非由检测器误检/不确定度逐轮驱动；CutPaste、DRÆM、NSA、SimpleNet 的自监督增广算子固定手工、不随下游损失更新。综述开放问题 1 亦指出合成-真实鸿沟目前是「被动接受而非系统性度量、反馈、迭代的闭环」。\", \"missing\": \"语料中不存在「合成→训练检测器→用检测器在无标注验证/现场数据上的残差或不确定度决定下一轮合成什么」的闭环机制；合成分布与检测器实际残差分布之间没有反馈通路，缺口具体且可执行。\", \"related_titles\": [\"DefectFill: Realistic Defect Generation with Inpainting Diffusion Model for Visual Inspection\", \"A Unified Anomaly Synthesis Strategy with Gradient Ascent for Industrial Anomaly Detection and Localization\", \"Natural Synthetic Anomalies for Self-supervised Anomaly Detection and Localization\"]}, {\"gap\": \"将特征空间合成（轻量、端到端、与特征重建检测器同构）与像素空间合成（可解释、可服务分割监督）融合为混合架构：固定下游检测器与数据体制，实现「特征级异常注入 + 像素级扩散精修」两级管线并显式定义接口——特征级负责全局分布塑造与高效训练、像素级负责局部真实感并输出分割标注——以特征-像素掩码对齐作为两级一致性的最小可测约束，逐级消融验证各自贡献与接口设计。\", \"evidence\": \"RealNet、GLASS、SimpleNet 只在预训练特征空间注入异常并自认可解释性与跨域迁移受限；DefectFill、Anodapter、SARD、JGTDiff、FAST 走像素扩散且全部依赖真实缺陷或其掩码/框作条件。两条路线在语料中完全平行、互不交叉，综述分歧 1 将「特征级扩散与像素级精修能否融合」明确列为尚无定论之问。\", \"missing\": \"没有任何一篇论文让两级互相补偿、定义两级之间的接口或一致性约束；「特征级注入+像素级精修」的具体组合（含 RealNet 与 DefectFill 式两级的直接拼接与对齐校验）在语料中为零，方向不重叠、缺口具体可做。\", \"related_titles\": [\"RealNet: A Feature Selection Network with Realistic Synthetic Anomaly for Anomaly Detection\", \"DefectFill: Realistic Defect Generation with Inpainting Diffusion Model for Visual Inspection\", \"SimpleNet: A Simple Network for Image Anomaly Detection and Localization\"]}, {\"gap\": \"在连一张真实缺陷都不可得、仅有正常图像与物理机理/工艺参数/语义知识的产线设定下，以物理缺陷形成机理、工艺参数或语义先验（而非 DRÆM 式 Perlin 噪声+外部纹理或 NSA 式启发式图块粘贴）驱动像素级可控异常生成，以合成分布与真实缺陷分布距离相对 DRÆM/NSA 的可度量缩小为直接目标，使生成结果仍可直接服务像素级分割监督。\", \"evidence\": \"DRÆM、NSA、CutPaste 确实已在零真实缺陷下于像素空间制造带标注伪异常并端到端服务定位/分割，故「像素介质×零缺陷×像素级标注」不构成空位；但三者合成算子均为手工启发式编辑，且论文自认其局限正是合成-真实分布鸿沟与难以覆盖目标域特有缺陷形态；语料中没有任何工作以缺陷形成机理/工艺参数/语义知识替代真实缺陷样例来驱动像素生成（JGTDiff 用几何结构先验也仍须真实缺陷配对，VL-Anodiff 的语义引导仍以少样本真实异常为前提）。\", \"missing\": \"将「零真实缺陷下、以物理/工艺/语义先验驱动像素级可控生成」作为 NSA/DRÆM 线上的续作缺口而非空位：该线上所有现成方法都靠人工启发式编辑，先验驱动的像素生成与「分布距离可度量缩小」的直接目标未被任何工作触及。\", \"related_titles\": [\"DRÆM – A Discriminatively Trained Reconstruction Embedding for Surface Anomaly Detection\", \"Natural Synthetic Anomalies for Self-supervised Anomaly Detection and Localization\", \"CutPaste: Self-Supervised Learning for Anomaly Detection and Localization\"]}, {\"gap\": \"在像素级、无掩码/弱掩码条件下合成全局型/非局部异常（整面变色、跨区域过程退化等不可框定为局部贴片的缺陷），以 GLASS 的特征空间全局合成 GAS 为对照，补足其无法输出像素级标注、难以可视化与直接服务分割监督的短板；跨材质共享底座问题（如 JGTDiff 式几何-纹理解耦的跨域复用）已从本条拆出、另行论证。\", \"evidence\": \"现役掩码-inpainting 范式（AnomalyControl、DefectFill、JGTDiff、SARD）默认异常是「可框定的局部贴片」，DefectFill 与 JGTDiff 均自认对全局型/非局部缺陷覆盖不足；GLASS 虽提出全局合成 GAS，却是在特征空间以梯度上升+截断投影实现，不产出像素标注、可解释性差；综述开放问题 2 亦将「从局部缺陷走向全局/分布外缺陷」列为待啃问题。\", \"missing\": \"像素级、无掩码条件下的全局/非局部异常合成在语料中为空缺：特征空间的 GAS 与像素空间的局部 inpainting 各占一半，无人补齐「像素级全局合成并可输出标注」这一格；聚焦后的单点问题与 GLASS（介质不同、标注能力不同）和掩码-inpainting 线（缺陷尺度不同）均无重叠。\", \"related_titles\": [\"A Unified Anomaly Synthesis Strategy with Gradient Ascent for Industrial Anomaly Detection and Localization\", \"AnomalyControl: Few-Shot Anomaly Generation by ControlNet Inpainting\", \"DefectFill: Realistic Defect Generation with Inpainting Diffusion Model for Visual Inspection\"]}, {\"gap\": \"收敛为单一可交付物：先构造「合成异常分布与真实缺陷分布的距离」的可计算度量（覆盖保真度/多样性/对齐，并与下游增益挂钩），在固定数据体制（零缺陷与 1/2/4-shot）与固定下游架构下统一报告图像级/像素级/生成质量三指标，作为跨方法可比的控制变量平台；标注与计算成本口径及「合成投入—下游增益」成本收益标准化留作该平台的后续扩展。\", \"evidence\": \"综述分歧 5 与开放问题 3 指出评测口径各说各话（检测 AUROC、像素 AUROC/AU-PR、少样本分类 AUROC、生成质量），多数工作仅在 MVTec 单一基准验证、结论难以互比；同时语料各文已自带多基准多指标碎片（RealNet 四基准图像+像素指标、CLIP-FSAC 少样本分类 AUROC、FAST/SARD 像素 AU-PR、JGTDiff 图-掩码对齐度量），可直接拼出部分可比面，唯独缺一个把生成质量与下游增益串起来的统一度量。\", \"missing\": \"语料中无任何工作给出「合成分布与真实缺陷分布距离」的可计算度量并用其解释不同合成器的下游增益差异；该度量加固定体制、固定架构、三指标受控报告是方法学上最小可交付、先于任何单个合成器的比较平台空位。\", \"related_titles\": [\"RealNet: A Feature Selection Network with Realistic Synthetic Anomaly for Anomaly Detection\", \"CLIP-FSAC: Boosting CLIP for Few-Shot Anomaly Classification with Synthetic Anomalies\", \"FAST: Foreground-aware Diffusion with Accelerated Sampling Trajectory for Segmentation-oriented Anomaly Synthesis\"]}]}\n\n论文语料：\n[1] RealNet: A Feature Selection Network with Realistic Synthetic Anomaly for Anomaly Detection (2024, 被引201-1000)\n    问题: 自监督特征重建类工业异常检测缺乏真实多样的异常样本，且预训练特征存在冗余与预训练偏置，制约检测与定位性能。\n    方法: 提出强度可控扩散异常合成 SDAS，用扩散过程在预训练特征空间中按不同异常强度生成贴近真实分布的合成异常，并配套异常感知特征选择 AFS 与重建残差选择 RRS。\n    贡献: 首次把扩散合成异常与特征选择统一进一个特征重建框架，在 MVTec 等四个基准上图像级与像素级指标均显著提升（CVPR 2024，被引 269）。\n    局限: 异常在特征空间而非像素空间生成，依赖预训练特征分布并需配合下游重建网络，可解释性与跨域迁移仍受限。\n[2] Natural Synthetic Anomalies for Self-supervised Anomaly Detection and Localization (2022, 被引201-1000)\n    问题: 自监督异常增广生成的伪异常与真实图像局部异常不够相似，影响端到端检测与定位的泛化。\n    方法: 提出 NSA：用泊松图像编辑把来自不同图像的缩放图块无缝混合进正常图像，生成更贴近自然局部异常的合成异常，仅用正常数据端到端训练检测与定位模型。\n    贡献: 以图像编辑手段显著提升合成异常的自然度，在 MVTec AD 达到 97.2 检测 AUROC，优于当时所有不使用额外数据集的方法。\n    局限: 增广异常仍为启发式图块拼接，难以覆盖目标域特有的缺陷形态与语义异常。\n[3] SimpleNet: A Simple Network for Image Anomaly Detection and Localization (2023, 被引201-1000)\n    问题: 主流异常检测方法流程复杂（特征提取、分布估计、多尺度融合），难以公平对比且不够简洁。\n    方法: 在正常特征中加入高斯噪声等扰动构造特征层面的合成异常，配合稀疏判别头训练一个极简的端到端检测网络。\n    贡献: \n    局限: \n[4] A Unified Anomaly Synthesis Strategy with Gradient Ascent for Industrial Anomaly Detection and Localization (2024, 被引51-200)\n    问题: 已有异常合成策略覆盖面窄、可控性弱，尤其难以合成与正常区域高度相似的弱缺陷\n    方法: 提出全局异常合成 GAS 与局部异常合成 LAS 的统一框架 GLASS，在流形与超球约束下用梯度上升与截断投影可控合成近分布异常\n    贡献: 在 MVTec AD 上检测 AUROC 达 99.9%，在 VisA、MPDD 上达 SOTA，弱缺陷检测突出并经织物缺陷工业场景验证\n    局限: 合成依赖特征流形先验，代码与数据尚未发布，真实缺陷多样性仍受合成分布设计约束\n[5] DefectFill: Realistic Defect Generation with Inpainting Diffusion Model for Visual Inspection (2025, 被引11-50)\n    问题: 视觉检测中缺陷数据稀缺，已有生成方法难以产出高真实度的局部缺陷并能无缝融入无缺陷产品表面。\n    方法: 仅用少量参考缺陷图微调修补式 inpainting 扩散模型，用缺陷、目标、注意力三项定制损失精确刻画局部缺陷，再以低保真度选择机制筛除低质量样本。\n    贡献: CVPR 2025 提出少样本高真实缺陷生成方案，生成数据使 MVTec AD 上的检测模型达到 SOTA。\n    局限: 依赖修补掩码与目标注意力定位缺陷，对全局型/非局部缺陷及 MVTec 之外域的可扩展性未充分验证。\n[6] Defect-GAN: High-Fidelity Defect Synthesis for Automated Defect Inspection (2021, 被引51-200)\n    问题: 自动化缺陷检测依赖深度网络，但制造业中真实缺陷样本稀缺，制约检测模型训练。\n    方法: 提出 Defect-GAN：通过「破坏-恢复」（defacement-restoration）双过程在正常表面图像上合成缺陷，采用组合式分层架构生成带多种背景纹理的高保真缺陷并模拟其随机变化。\n    贡献: 给出能灵活控制缺陷位置与类别、兼具保真度与多样性的 GAN 缺陷合成框架，并验证合成样本可有效训练更强的缺陷检测网络。\n    局限: 训练需要正常图与缺陷掩膜的配对监督，掩膜标注成本高；合成缺陷类别受训练数据限制。\n[7] Few-Shot Anomaly-Driven Generation for Anomaly Classification and Segmentation (2024, 被引11-50)\n    问题: 用噪声或外部数据合成的异常与真实异常存在语义差距，少样本条件下的异常检测性能受限\n    方法: 三步完成生成到下游：先从少量真实异常学习分布并注入 embedding，再用 embedding 与边界框引导扩散模型在目标物体上生成真实多样异常，最后用弱监督方法训练分类与分割模型\n    贡献: 生成的异常同时提升 MVTec 上分类与分割性能，如分割 AU-PR 在 DRAEM 与 DesTSeg 上分别提升 5.8% 与 1.5%，并开源约 7 万张生成图\n    局限: 需要少量真实异常及其标注框作为生成引导，下游模型依赖 DRAEM 与 DesTSeg 式训练范式，通用性待验证\n[8] CLIP-FSAC: Boosting CLIP for Few-Shot Anomaly Classification with Synthetic Anomalies (2024, 被引11-50)\n    问题: 少样本异常分类中 CLIP 缺少专用文本提示，图像与文本存在模态差距且预训练与目标域分布不一致\n    方法: 两阶段交替微调图像与文本双适配器，以融合文本对比损失约束，并引入 image-to-text 调优增强多模态交互\n    贡献: 在 VisA 的 1、2、4 正常样本设置下分类 AUROC 分别超过 SOTA 方法 12.2、10.9、10.4 个百分点\n    局限: 主要在少样本分类任务上验证，对分割与更多数据集的证据有限，合成异常发挥作用的具体机制阐述不够充分\n[9] Region- and Strength-Controllable GAN for Defect Generation and Segmentation in Industrial Images (2022, 被引51-200)\n    问题: 工业图像缺陷样本少且标注成本高，难以支撑像素级分割模型的训练\n    方法: 用区域与缺陷强度可控的生成式对抗网络生成带标注的缺陷样本，并同步产出缺陷分割结果\n    贡献: 提出面向工业图像的「缺陷生成加分割」一体化 GAN 框架，发表在 IEEE TII，为可控缺陷合成提供 GAN 路线方案\n    局限: \n[10] Progressive Boundary Guided Anomaly Synthesis for Industrial Anomaly Detection (2025, 被引11-50)\n    问题: 合成异常与真实异常在边界形态上不一致，掩码边缘粗糙影响下游定位。\n    方法: 以渐进式边界引导的方式合成异常，由粗到细地对齐异常区域的边界结构。\n    贡献: 把掩码边界对齐作为合成异常的显式优化目标，改善工业异常检测与定位效果。\n    局限: \n[11] Unseen Visual Anomaly Generation (2025, 被引11-50)\n    问题: 训练阶段未见过的异常类型难以被合成与建模，限制了异常检测模型对未知缺陷的泛化。\n    方法: 面向未见视觉异常提出专门的生成策略，使合成异常覆盖训练分布之外的合理形态。\n    贡献: 把异常生成的泛化性作为独立问题研究，拓宽可控合成的覆盖维度。\n    局限: \n[12] Joint Geometry-Texture Decoupled Diffusion for Few-Shot Industrial Anomaly Synthesis (2026, 被引未标注（新发表）)\n    问题: 金属件缺陷嵌入致密加工微纹理且受严格几何结构约束，少样本下合成常出现图-掩码错位、背景结构漂移与高频细节过平滑。\n    方法: 提出 JGTDiff 双流掩码条件交叉条件扩散，联合生成异常图与其掩码：结构先验模块稳定几何条件、多尺度交叉条件引导保持图-掩码一致、双瓶颈分支解耦几何与纹理流形、梯度-频率后补偿恢复高频细节。\n    贡献: Journal of Intelligent Manufacturing，几何与纹理解耦的少样本图-掩码对合成在保真度、多样性与对齐上超越 GAN 与扩散基线，并显著提升下游检测定位与分类。\n    局限: 仅在 MVTec AD 金属类验证，多模块耦合带来实现复杂度，对其他材质与真实产线域的可迁移性待考。\n[13] CAGEN: Controllable Anomaly Generator Using Diffusion Model (2024, 被引11-50)\n    问题: 异常样本难以按需求按条件批量生成，影响异常检测训练数据的供给。\n    方法: 基于扩散模型设计可控异常生成器，通过条件输入控制生成异常的类型与形态。\n    贡献: 提出面向可控异常合成的扩散生成方案，扩充少异常场景下的训练数据。\n    局限: \n[14] FAST: Foreground-aware Diffusion with Accelerated Sampling Trajectory for Segmentation-oriented Anomaly Synthesis (2025, 被引未标注（新发表）)\n    问题: 面向分割的工业异常合成 SIAS 需像素级标注且真实异常稀缺，现有方法难以兼顾采样效率与生成质量，且对前景异常与背景区域不加区分。\n    方法: 提出前景感知扩散框架，含免训练加速采样 AIAS（由粗到细聚合，约 10 步完成反向过程）与前景感知重建模块 FARM（逐步调节掩码前景区的异常噪声以保留局部异常信号）。\n    贡献: NeurIPS 2025，免训练地将分割导向异常合成加速到约 10 步并稳定优于既有合成方法的下游分割效果。\n    局限: 面向分割任务设计，是否适用于一般检测/分类增强场景尚需验证，异常形态多样性也依赖扩散先验。\n[15] VL-Anodiff: Vision-Language Guided Diffusion for Few-Shot Industrial Anomaly Synthesis (2026, 被引未标注（新发表）)\n    问题: 少样本工业异常合成缺乏语义可控性，仅靠掩码/类别条件难以精细刻画异常外观。\n    方法: 用视觉-语言（CLIP 类）语义表征引导扩散模型，在少样本条件下按文本语义生成对应工业异常样本（据标题与检索信息推断）。\n    贡献: ICASSP 2026，把多模态语义引导引入少样本工业异常合成，扩展生成条件的表达能力。\n    局限: \n[16] AnomalyControl: Few-Shot Anomaly Generation by ControlNet Inpainting (2024, 被引1-10)\n    问题: 真实工业场景非名义样本稀缺，难以让通用大规模扩散模型为具体产品生成真实缺陷。\n    方法: 将缺陷生成建模为名义图像的 inpainting，用 ControlNet 对 stable diffusion 修补模型做定制化，实现少样本异常图像生成。\n    贡献: 验证掩码修复加 ControlNet 条件化是少样本异常生成的有效范式，生成的图像质量显著改善下游异常分类的最优水平。\n    局限: 生成依赖给定的异常掩码且缺乏对掩码与生成内容对齐关系的显式保证，评估以分类为主、缺少对像素级对齐与多样性的量化。\n[17] Diversifying Tire-Defect Image Generation Based on Generative Adversarial Network (2022, 被引11-50)\n    问题: 轮胎表面缺陷样本稀少且形态单一，难以支撑基于深度学习的缺陷检测训练。\n    方法: 基于 GAN 的缺陷图像生成并侧重生成样本的多样性（diversity），为轮胎缺陷检测扩充数据。\n    贡献: \n    局限: \n[18] Anodapter: A Unified Framework for Generating Aligned Anomaly Images and Masks Using Diffusion Models (2025, 被引1-10)\n    问题: 多数合成方法生成的异常图与标注掩码不对齐，难以直接用于像素级监督训练。\n    方法: 以适配器方式微调扩散模型，统一生成空间对齐的异常图像与其掩码（据标题与检索信息推断）。\n    贡献: IEEE Access 2025，提供图像与掩码天然对齐的统一式异常生成框架，便于直接做监督式异常检测训练。\n    局限: \n[19] SARD: Segmentation-Aware Anomaly Synthesis Via Region-Constrained Diffusion with Discriminative Mask Guidance (2025, 被引未标注（新发表）)\n    问题: 扩散异常合成缺乏对异常区域的空间约束，合成异常与掩码语义不一致，不利分割监督。\n    方法: 以判别性掩码为指导对扩散过程做区域约束，按区域受控地合成异常样本（据标题与检索信息推断）。\n    贡献: MIND 2025，给出分割感知的区域受限扩散合成方案，增强合成异常的定位一致性。\n    局限: \n[20] Defect Image Sample Generation with Diffusion Prior for Steel Surface Defect Recognition (2024, 被引1-10)\n    问题: 钢材表面缺陷识别同样受困于缺陷样本稀缺，需要可用的合成样本扩充训练集。\n    方法: 借助扩散先验生成缺陷图像样本用于钢材表面缺陷识别训练（据标题与检索信息推断，具体机制未精读）。\n    贡献: IEEE TASE 2024，将扩散先验用于工业缺陷样本生成的下游识别管线，属领域内较早的期刊探索。\n    局限: \n[21] Fabric Defect Image Generation Method Based on the Dual-Stage W-net Generative Adversarial Network (2024, 被引1-10)\n    问题: 织物缺陷数据匮乏且缺陷纹理复杂，常规方法难以生成高质量织物缺陷样本。\n    方法: 提出双阶段 W-net 结构的生成对抗网络专门生成织物缺陷图像。\n    贡献: \n    局限: \n[22] CutPaste: Self-Supervised Learning for Anomaly Detection and Localization (2021, 被引1001-5000)\n    问题: 在完全没有异常样本的情况下，如何为工业缺陷检测构造高性能模型。\n    方法: 提出 CutPaste 局部变换增广：把正常图像的一块剪下随机粘贴到另一位置制造伪异常，先用该代理任务自监督学习表示，再在表示上训练生成式单类分类器，并可延伸为块级表示实现异常定位。\n    贡献: 开创了用剪切-粘贴式局部异常合成做自监督预训练的范式，在 MVTec AD 上仅用正常数据达到 96.6 AUC，成为后续经典增广方法（如 NSA）的直接参照。\n    局限: CutPaste 仅覆盖结构性贴片类缺陷，对纹理/颜色类异常的模拟能力有限，生成异常与真实缺陷分布仍有差距。\n[23] DRÆM – A Discriminatively Trained Reconstruction Embedding for Surface Anomaly Detection (2021, 被引1001-5000)\n    问题: 基于生成式重建的异常检测难以直接优化检测能力且需要复杂后处理来定位异常。\n    方法: 将表面异常检测转为判别式问题：用 Perlin 噪声掩膜粘贴随机纹理等简单通用的异常模拟生成合成缺陷图，训练一个在异常图与其无异常重建图的联合表示上分类的判别模型。\n    贡献: 提出 DRAEM 判别式重建嵌入框架，可端到端直接定位异常而无需额外后处理，在 MVTec AD 与 DAGM 上大幅超过当时的无监督方法。\n    局限: 依赖手工设计的异常模拟（噪声掩膜+外部纹理），合成异常与真实缺陷的分布差异仍限制其泛化。\n[24] Unsupervised Anomaly Detection with Generative Adversarial Networks to Guide Marker Discovery (2017, 被引1001-5000)\n    问题: 医学图像异常区域无标注时，如何利用生成模型进行无监督异常检测。\n    方法: 用 GAN 学习正常图像分布，将测试图映射回隐空间重建，以重建残差与判别得分联合判定异常。\n    贡献: \n    局限: \n\n只输出一个 JSON（```json 围栏）。**字符串值内部不要用英文双引号。** schema：\n```json\n{\n  \"verified\": [\n    {\"gap\": \"原 gap\", \"verdict\": \"keep|weak|drop\", \"reason\": \"...\", \"refined\": \"更聚焦的改写（可选）\"}\n  ]\n}\n```\n"
+          },
+          "count": 1,
+          "lastSeq": 7
+        }
+      },
+      "llmRetry": {
+        "ver": 1,
+        "seq": 14254,
+        "val": {}
+      },
+      "sandboxMode": {
+        "ver": 1,
+        "seq": 14254,
+        "val": "workspace-write"
+      },
+      "goal": {
+        "ver": 6,
+        "seq": 14254,
+        "val": {
+          "current": null,
+          "seenGoalIds": [],
+          "failure": null
+        }
+      },
+      "tokenUsage": {
+        "ver": 2,
+        "seq": 14254,
+        "val": {
+          "totals": {
+            "uncachedInputTokens": 5694,
+            "outputTokens": 14233,
+            "cacheReadTokens": 14976,
+            "cacheWriteTokens": 0
+          },
+          "last": {
+            "turn": 1,
+            "step": 1,
+            "buckets": {
+              "uncachedInputTokens": 5694,
+              "outputTokens": 14233,
+              "cacheReadTokens": 14976,
+              "cacheWriteTokens": 0
+            }
+          }
+        }
+      },
+      "contextPressure": {
+        "ver": 4,
+        "seq": 14254,
+        "val": {
+          "surfaceTokens": 16200,
+          "contextWindow": 1000000,
+          "pressureTokens": 20670,
+          "sampledSurfaceTokens": 3219
+        }
+      },
+      "contextBreakdown": {
+        "ver": 2,
+        "seq": 14254,
+        "val": {
+          "systemTokens": 1134,
+          "toolsTokens": 11493,
+          "messageTokens": 16200
+        }
+      },
+      "subagentTiming": {
+        "ver": 2,
+        "seq": 14254,
+        "val": {
+          "descriptorSeen": false,
+          "settledMs": 0
+        }
+      },
+      "subagent": {
+        "ver": 2,
+        "seq": 14254,
+        "val": {}
+      },
+      "plan": {
+        "ver": 3,
+        "seq": 14254,
+        "val": {
+          "active": false,
+          "wanted": null,
+          "running": null,
+          "activeAtLastHeader": false
+        }
+      },
+      "todos": {
+        "ver": 2,
+        "seq": 14254,
+        "val": null
+      },
+      "turnBoundary": {
+        "ver": 2,
+        "seq": 14254,
+        "val": {
+          "openTurnStartSeq": null,
+          "lastStepStartSeq": 6,
+          "lastStepBoundary": {
+            "kind": "end",
+            "seq": 14253
+          },
+          "lastTurn": 1
+        }
+      },
+      "subagentModelSelectionPolicy": {
+        "ver": 1,
+        "seq": 14254,
+        "val": null
+      },
+      "permissions": {
+        "ver": 2,
+        "seq": 14254,
+        "val": {
+          "preset": "workspace-write",
+          "sandbox": "workspace-write",
+          "approval": "ask",
+          "seeded": false
+        }
+      }
+    }
+  }
+}

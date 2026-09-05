@@ -1,0 +1,146 @@
+{
+  "version": 6,
+  "record": {
+    "identity": {
+      "createdAt": 1788536628197,
+      "cwd": "/Users/axton/paper-scout/workspace",
+      "isSeeded": false,
+      "inheritedEventCount": 0
+    },
+    "rows": {
+      "title": {
+        "ver": 1,
+        "seq": 155,
+        "val": "请使用 mcp__aminer__search_paper_by_t"
+      },
+      "titleInput": {
+        "ver": 3,
+        "seq": 155,
+        "val": {
+          "first": {
+            "seq": 7,
+            "text": "请使用 mcp__aminer__search_paper_by_title 工具，按标题搜索 “Attention Is All You Need”，然后只把你找到的第一篇论文的标题和它的 id 告诉我，不要做别的事。"
+          },
+          "count": 1,
+          "lastSeq": 7
+        }
+      },
+      "llmRetry": {
+        "ver": 1,
+        "seq": 155,
+        "val": {}
+      },
+      "sandboxMode": {
+        "ver": 1,
+        "seq": 155,
+        "val": "workspace-write"
+      },
+      "goal": {
+        "ver": 6,
+        "seq": 155,
+        "val": {
+          "current": null,
+          "seenGoalIds": [],
+          "failure": null
+        }
+      },
+      "tokenUsage": {
+        "ver": 2,
+        "seq": 155,
+        "val": {
+          "totals": {
+            "uncachedInputTokens": 16263,
+            "outputTokens": 168,
+            "cacheReadTokens": 14976,
+            "cacheWriteTokens": 0
+          },
+          "last": {
+            "turn": 1,
+            "step": 2,
+            "buckets": {
+              "uncachedInputTokens": 1285,
+              "outputTokens": 63,
+              "cacheReadTokens": 14976,
+              "cacheWriteTokens": 0
+            }
+          }
+        }
+      },
+      "contextPressure": {
+        "ver": 4,
+        "seq": 155,
+        "val": {
+          "surfaceTokens": 1160,
+          "contextWindow": 1000000,
+          "pressureTokens": 16261,
+          "sampledSurfaceTokens": 1103
+        }
+      },
+      "contextBreakdown": {
+        "ver": 2,
+        "seq": 155,
+        "val": {
+          "systemTokens": 1134,
+          "toolsTokens": 11493,
+          "messageTokens": 1160
+        }
+      },
+      "subagentTiming": {
+        "ver": 2,
+        "seq": 155,
+        "val": {
+          "descriptorSeen": false,
+          "settledMs": 0
+        }
+      },
+      "subagent": {
+        "ver": 2,
+        "seq": 155,
+        "val": {}
+      },
+      "plan": {
+        "ver": 3,
+        "seq": 155,
+        "val": {
+          "active": false,
+          "wanted": null,
+          "running": null,
+          "activeAtLastHeader": false
+        }
+      },
+      "todos": {
+        "ver": 2,
+        "seq": 155,
+        "val": null
+      },
+      "turnBoundary": {
+        "ver": 2,
+        "seq": 155,
+        "val": {
+          "openTurnStartSeq": null,
+          "lastStepStartSeq": 84,
+          "lastStepBoundary": {
+            "kind": "end",
+            "seq": 154
+          },
+          "lastTurn": 1
+        }
+      },
+      "subagentModelSelectionPolicy": {
+        "ver": 1,
+        "seq": 155,
+        "val": null
+      },
+      "permissions": {
+        "ver": 2,
+        "seq": 155,
+        "val": {
+          "preset": "workspace-write",
+          "sandbox": "workspace-write",
+          "approval": "ask",
+          "seeded": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# 把 AMiner 托管 MCP 挂进 dsh runtime（A2）。挂上后其 26 个学术工具
+# 以 mcp__aminer__<tool> 的名字出现在 agent 工具表里。
+# token 从进程环境变量 AMINER_TOKEN 读取（!!js 在 loader 里求值）。
+- insert:
+    - id: mcp-aminer
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: aminer
+        transport: streamable-http
+        url: https://mcp.aminer.cn/mcp
+        headers:
+          Authorization: !!js '`Bearer ${process.env.AMINER_TOKEN}`'
+        # 第 0 步要大声暴露连不上的问题，验证期先开启
+        failOnStartupError: true

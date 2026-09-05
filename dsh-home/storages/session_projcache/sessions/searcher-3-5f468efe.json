@@ -1,0 +1,146 @@
+{
+  "version": 6,
+  "record": {
+    "identity": {
+      "createdAt": 1788543167678,
+      "cwd": "/Users/axton/paper-scout/workspace",
+      "isSeeded": false,
+      "inheritedEventCount": 0
+    },
+    "rows": {
+      "title": {
+        "ver": 1,
+        "seq": 12747,
+        "val": "你是一个文献调研的“检索 age"
+      },
+      "titleInput": {
+        "ver": 3,
+        "seq": 12747,
+        "val": {
+          "first": {
+            "seq": 7,
+            "text": "你是一个文献调研的“检索 agent”，负责把一个子方向查透。你能调用 AMiner 工具（mcp__aminer__ 前缀），需要用到：\n- mcp__aminer__search_paper：按英文关键词搜论文，返回候选的 id、标题、年份、被引档位 n_citation_bucket。\n- mcp__aminer__get_paper_detail：按 id 取论文详情，含英文摘要 abstract、关键词、被引数。\n- （可选）mcp__aminer__recommend_paper：按主题词推荐相关论文。\n\n研究领域背景：\n面向工业异常检测的生成式缺陷/异常图像合成：利用扩散模型等生成方法人工构造缺陷/异常样本，缓解真实缺陷数据稀缺，服务于数据增强、少样本与一次学习条件下的异常检测，属于工业异常检测与生成式视觉合成的交叉子领域\n\n当前子方向：**异常生成的掩码对齐、可控性与质量评估**\n（为什么重要：两篇种子均把贡献放在「生成与掩码对齐、小缺陷不被忽略、背景纹理保持」等可控合成问题上，如何量化保真度与多样性并权衡下游收益是该领域特有的方法论议题）\n建议检索词（可自行调整）：\n- anomaly mask guided generation alignment\n- controllable anomaly synthesis condition\n- fidelity diversity evaluation generated anomalies\n- synthetic defect quality defect localization\n\n已知的两篇种子论文（不要把它们当作本方向的新发现重复报告，但可以作为相关性判断的锚点）：\n1. Training-Free Industrial Defect Generation with Diffusion Models\n2. AnomalyDiffusion: Few-Shot Anomaly Image Generation with Diffusion Model\n\n工作步骤（严格控制调用次数，避免浪费）：\n1. 对每个检索词调用 **一次** search_paper（size 可设 8~10）。**不要重复搜同一个词。**\n2. 汇总候选，按 id 去重，剔除明显跑题的；综合“与本子方向相关性 + 被引档位 + 年份”挑出最重要的 **不超过 8 篇**。\n3. 只对其中最关键的 **不超过 4 篇** 调用 get_paper_detail 读摘要（这一步计费，务必克制）；其余论文用搜索返回的标题/年份/被引信息即可。\n4. 为每篇候选写一条结构化笔记。精读过的用摘要填 method/contribution/limitation；没精读的这些字段可留简短或空字符串。\n\n完成后，只输出一个 JSON（用 ```json 围栏）。**注意：JSON 字符串值内部不要出现英文双引号，需要强调或引用时一律用中文引号「」。** schema：\n```json\n{\n  \"subtopic\": \"异常生成的掩码对齐、可控性与质量评估\",\n  \"papers\": [\n    {\n      \"id\": \"AMiner id\",\n      \"title\": \"标题\",\n      \"year\": 2024,\n      \"citation_bucket\": \"如 51-200\",\n      \"read_detail\": true,\n      \"problem\": \"它针对的问题（中文一句）\",\n      \"method\": \"核心方法（中文一句）\",\n      \"contribution\": \"主要贡献（中文一句）\",\n      \"limitation\": \"局限或未解决之处（中文一句，没读全文就据摘要推断，可留空）\",\n      \"relevance\": \"与本子方向的关系（中文一句）\"\n    }\n  ]\n}\n```\n"
+          },
+          "count": 1,
+          "lastSeq": 7
+        }
+      },
+      "llmRetry": {
+        "ver": 1,
+        "seq": 12747,
+        "val": {}
+      },
+      "sandboxMode": {
+        "ver": 1,
+        "seq": 12747,
+        "val": "workspace-write"
+      },
+      "goal": {
+        "ver": 6,
+        "seq": 12747,
+        "val": {
+          "current": null,
+          "seenGoalIds": [],
+          "failure": null
+        }
+      },
+      "tokenUsage": {
+        "ver": 2,
+        "seq": 12747,
+        "val": {
+          "totals": {
+            "uncachedInputTokens": 13448,
+            "outputTokens": 13743,
+            "cacheReadTokens": 185344,
+            "cacheWriteTokens": 0
+          },
+          "last": {
+            "turn": 1,
+            "step": 9,
+            "buckets": {
+              "uncachedInputTokens": 2683,
+              "outputTokens": 3730,
+              "cacheReadTokens": 34304,
+              "cacheWriteTokens": 0
+            }
+          }
+        }
+      },
+      "contextPressure": {
+        "ver": 4,
+        "seq": 12747,
+        "val": {
+          "surfaceTokens": 20216,
+          "contextWindow": 1000000,
+          "pressureTokens": 36987,
+          "sampledSurfaceTokens": 17863
+        }
+      },
+      "contextBreakdown": {
+        "ver": 2,
+        "seq": 12747,
+        "val": {
+          "systemTokens": 1134,
+          "toolsTokens": 11493,
+          "messageTokens": 20216
+        }
+      },
+      "subagentTiming": {
+        "ver": 2,
+        "seq": 12747,
+        "val": {
+          "descriptorSeen": false,
+          "settledMs": 0
+        }
+      },
+      "subagent": {
+        "ver": 2,
+        "seq": 12747,
+        "val": {}
+      },
+      "plan": {
+        "ver": 3,
+        "seq": 12747,
+        "val": {
+          "active": false,
+          "wanted": null,
+          "running": null,
+          "activeAtLastHeader": false
+        }
+      },
+      "todos": {
+        "ver": 2,
+        "seq": 12747,
+        "val": null
+      },
+      "turnBoundary": {
+        "ver": 2,
+        "seq": 12747,
+        "val": {
+          "openTurnStartSeq": null,
+          "lastStepStartSeq": 9010,
+          "lastStepBoundary": {
+            "kind": "end",
+            "seq": 12746
+          },
+          "lastTurn": 1
+        }
+      },
+      "subagentModelSelectionPolicy": {
+        "ver": 1,
+        "seq": 12747,
+        "val": null
+      },
+      "permissions": {
+        "ver": 2,
+        "seq": 12747,
+        "val": {
+          "preset": "workspace-write",
+          "sandbox": "workspace-write",
+          "approval": "ask",
+          "seeded": false
+        }
+      }
+    }
+  }
+}
