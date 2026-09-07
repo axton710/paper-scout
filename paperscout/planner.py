@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .harness import AgentResult, extract_json, run_agent
+from .validation import OutputError, object_value, list_value, text_value, subtopic
 
 # 子方向数量区间：仅作 fan-out/成本护栏，具体拆几个由 Planner 按领域宽窄自行决定
 MIN_SUBTOPICS = 2
@@ -47,5 +48,25 @@ def build_prompt(seed_titles: list[str], min_subtopics: int = MIN_SUBTOPICS,
 def plan(harness, seed_titles: list[str], session_id: str = "planner",
          min_subtopics: int = MIN_SUBTOPICS, max_subtopics: int = MAX_SUBTOPICS) -> tuple[dict | None, AgentResult]:
     prompt = build_prompt(seed_titles, min_subtopics, max_subtopics)
-    result = run_agent(harness, prompt, session_id=session_id)
-    return extract_json(result.text), result
+    result = run_agent(harness, prompt, session_id=session_id,
+                       tool_limits={"search_paper_by_title": len(seed_titles), "get_paper_detail": len(seed_titles)})
+    from .provenance import ground_corpus
+    obj = validate_plan(extract_json(result.text), min_subtopics, max_subtopics)
+    seeds = [{**seed, "id": text_value(seed.get("aminer_id"), "seed.aminer_id")} for seed in obj["seeds"]]
+    obj["seeds"] = ground_corpus({"papers": seeds}, result.events, result.session_id, [])["papers"]
+    return obj, result
+
+
+def validate_plan(obj, minimum: int = MIN_SUBTOPICS, maximum: int = MAX_SUBTOPICS) -> dict:
+    obj = object_value(obj, "plan")
+    area = text_value(obj.get("area"), "plan.area")
+    seeds = list_value(obj.get("seeds"), "plan.seeds")
+    if not 1 <= len(seeds) <= 2:
+        raise OutputError("plan.seeds: 需要 1–2 篇种子论文")
+    for seed in seeds:
+        object_value(seed, "seed")
+        text_value(seed.get("title"), "seed.title")
+    topics = list_value(obj.get("subtopics"), "plan.subtopics")
+    if not minimum <= len(topics) <= maximum:
+        raise OutputError(f"plan.subtopics: 数量必须为 {minimum}–{maximum}")
+    return {**obj, "area": area, "subtopics": [subtopic(t) for t in topics]}

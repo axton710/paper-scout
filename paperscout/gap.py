@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 from .harness import Cost, extract_json, run_agent
+from .validation import object_value, list_value, text_value, strings
 
 MAX_ROUNDS = 2  # 首轮 + 至多一次修正
 
@@ -31,7 +32,9 @@ _GAP_PROMPT = """你是帮研究生找创新点的“gap 分析 agent”。下�
       "gap": "一句话说清这个创新方向",
       "evidence": "现状证据：哪些论文做了什么",
       "missing": "缺口：还缺什么/哪种组合没人做",
-      "related_titles": ["相关论文英文标题"]
+      "related_titles": ["相关论文英文标题"],
+      "to_verify": "仍需查证的具体主张",
+      "minimal_experiment": "最小实验：数据、基线、指标与可证伪条件"
     }}
   ]
 }}
@@ -57,7 +60,7 @@ _REVISE_PROMPT = """你是“gap 分析 agent”，正在做第二轮**修正**�
 ```json
 {{
   "gaps": [
-    {{"gap": "...", "evidence": "...", "missing": "...", "related_titles": ["..."]}}
+    {{"id": "保留原 ID；替换方向也沿用该候选 ID", "gap": "...", "evidence": "...", "missing": "...", "related_titles": ["..."], "to_verify": "...", "minimal_experiment": "..."}}
   ]
 }}
 ```
@@ -65,7 +68,8 @@ _REVISE_PROMPT = """你是“gap 分析 agent”，正在做第二轮**修正**�
 
 _VERIFY_PROMPT = """你是“核验 agent”，以**严格、挑剔**的标准把关，目的是挤掉“假新颖”。下面是一批候选创新点(gaps)和论文语料。逐条判定：
 - verdict：keep | weak | drop。
-- **keep 门槛要高**：只有语料中确实**没有方向相近的工作**、且缺口具体可做，才判 keep。
+- keep 仅表示当前证据支持继续验证，不能证明领域新颖性；搜索未找到、摘要未提到都不等于不存在。
+- 必须为每个候选 id 返回且只返回一条核验。
 - 只要语料里存在**方向相近、部分重叠、或该 gap 偏宽泛**，就判 **weak** 并指出与哪篇重叠、该如何收窄。
 - 已被现有工作基本覆盖，判 **drop** 并点名论文。
 - 抱着“能挑刺就挑刺”的心态——初版 gap 里通常会有若干 weak，请如实标出，不要为了好看一律 keep。
@@ -81,7 +85,7 @@ _VERIFY_PROMPT = """你是“核验 agent”，以**严格、挑剔**的标准�
 ```json
 {{
   "verified": [
-    {{"gap": "原 gap", "verdict": "keep|weak|drop", "reason": "...", "refined": "更聚焦的改写（可选）"}}
+    {{"id": "原候选的 id，必须逐条原样返回", "gap": "原 gap", "verdict": "keep|weak|drop", "reason": "...", "refined": "更聚焦的改写（可选）"}}
   ]
 }}
 ```
@@ -115,42 +119,68 @@ def _needs_revision(verified: list[dict]) -> bool:
     return any(v.get("verdict") in ("weak", "drop") for v in verified)
 
 
+def normalize_gaps(obj, previous: dict | None = None) -> dict:
+    obj = object_value(obj, "gaps")
+    gaps = list_value(obj.get("gaps"), "gaps.gaps")
+    if not 1 <= len(gaps) <= 6:
+        from .validation import OutputError
+        raise OutputError("gaps: 需要 1–6 条候选")
+    result, seen = [], set()
+    allowed = {g["id"] for g in previous["gaps"]} if previous else None
+    for i, item in enumerate(gaps, 1):
+        item = object_value(item, "gap").copy()
+        item["gap"] = text_value(item.get("gap"), "gap.gap")
+        item["id"] = text_value(item.get("id"), "gap.id") if previous else f"gap-{i}"
+        if item["id"] in seen or (allowed is not None and item["id"] not in allowed):
+            from .validation import OutputError
+            raise OutputError(f"gap.id 重复或不属于上一轮: {item['id']}")
+        seen.add(item["id"])
+        for key in ("evidence", "missing", "to_verify", "minimal_experiment"):
+            item[key] = text_value(item.get(key), f"gap.{key}")
+        item["related_titles"] = strings(item.get("related_titles"), "gap.related_titles")
+        result.append(item)
+    if allowed is not None and seen != allowed:
+        from .validation import OutputError
+        raise OutputError("回改结果遗漏候选 ID")
+    return {"gaps": result}
+
+
+def align_verdicts(raw_gaps: dict, obj) -> list[dict]:
+    # 核验缺失、重复或无效时保留候选，但只能显示为未核验。
+    entries = obj.get("verified", []) if isinstance(obj, dict) else []
+    if not isinstance(entries, list):
+        entries = []
+    result = []
+    for gap in raw_gaps["gaps"]:
+        matches = [v for v in entries if isinstance(v, dict) and gap.get("id") and v.get("id") == gap["id"]]
+        if (len(matches) == 1 and matches[0].get("verdict") in ("keep", "weak", "drop")
+                and isinstance(matches[0].get("reason"), str) and matches[0]["reason"].strip()):
+            result.append({**matches[0], "gap": gap["gap"]})
+        else:
+            result.append({"id": gap.get("id"), "gap": gap["gap"], "verdict": "unverified",
+                           "reason": "核验缺失、重复或结构无效，需要重新核验"})
+    return result
+
+
 def _format_feedback(raw_gaps: dict, verified: list[dict]) -> str:
-    by_gap = {v.get("gap", ""): v for v in verified}
-    lines = []
-    for i, g in enumerate(raw_gaps.get("gaps", []), 1):
-        v = by_gap.get(g.get("gap", ""), {})
-        lines.append(
-            f"{i}. [{v.get('verdict', '?')}] {g.get('gap', '')}\n"
-            f"   理由: {v.get('reason', '')}"
-            + (f"\n   收窄建议: {v['refined']}" if v.get("refined") else "")
-        )
-    return "\n".join(lines)
+    return json.dumps({"candidates": raw_gaps["gaps"], "verified": verified}, ensure_ascii=False)
 
 
 def reflect_gaps(harness, survey: str, corpus_text: str, max_rounds: int = MAX_ROUNDS):
-    """生成→核验→回改的反思闭环。返回 (最终 raw_gaps, 最终 verified, 成本, 每轮记录)。"""
     total = Cost()
-
-    raw, r = _find_gaps(harness, survey, corpus_text, "gap-r1")
+    raw_obj, r = _find_gaps(harness, survey, corpus_text, "gap-r1")
     total.merge(r.cost)
-    raw = raw or {"gaps": []}
-    vobj, vr = _verify_gaps(harness, json.dumps(raw, ensure_ascii=False), corpus_text, "verify-r1")
-    total.merge(vr.cost)
-    verified = (vobj or {}).get("verified", [])
-    rounds = [{"round": 1, "n": len(raw.get("gaps", [])), "verdicts": _counts(verified)}]
-
-    n = 1
-    while n < max_rounds and _needs_revision(verified):
-        n += 1
-        feedback = _format_feedback(raw, verified)
-        raw2, r2 = _revise_gaps(harness, survey, corpus_text, feedback, f"gap-r{n}")
-        total.merge(r2.cost)
-        if raw2 and raw2.get("gaps"):
-            raw = raw2
-        vobj, vr2 = _verify_gaps(harness, json.dumps(raw, ensure_ascii=False), corpus_text, f"verify-r{n}")
-        total.merge(vr2.cost)
-        verified = (vobj or {}).get("verified", [])
-        rounds.append({"round": n, "n": len(raw.get("gaps", [])), "verdicts": _counts(verified)})
-
+    raw = normalize_gaps(raw_obj)
+    rounds = []
+    for n in range(1, max_rounds + 1):
+        obj, vr = _verify_gaps(harness, json.dumps(raw, ensure_ascii=False), corpus_text, f"verify-r{n}")
+        total.merge(vr.cost)
+        verified = align_verdicts(raw, obj)
+        rounds.append({"round": n, "n": len(raw["gaps"]), "verdicts": _counts(verified),
+                       "raw_gaps": raw, "verified": verified})
+        if n == max_rounds or not _needs_revision(verified):
+            break
+        raw2, rr = _revise_gaps(harness, survey, corpus_text, _format_feedback(raw, verified), f"gap-r{n+1}")
+        total.merge(rr.cost)
+        raw = normalize_gaps(raw2, previous=raw)
     return raw, verified, total, rounds

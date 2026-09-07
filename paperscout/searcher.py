@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 
 from .harness import AgentResult, extract_json, run_agent
+from .provenance import ground_corpus
+from .validation import OutputError, object_value, list_value, strings, subtopic, text_value
 
 MAX_CANDIDATES = 8      # 每个子方向保留的候选上限
 MAX_DETAIL_READS = 4    # 精读（get_paper_detail，计费）上限，控成本
@@ -67,7 +69,7 @@ def build_prompt(area: str, subtopic: dict, seed_titles: list[str], known_papers
     queries = "\n".join(f"- {q}" for q in subtopic.get("queries", []))
     seeds = "\n".join(f"{i}. {t}" for i, t in enumerate(seed_titles, 1))
     known = "\n".join(
-        f"- {p.get('id')}: {p.get('title')}"
+        f"- {p.get('id')}: {p.get('title')} | 方法: {p.get('method', '')} | 贡献: {p.get('contribution', '')} | 局限（推断）: {p.get('limitation', '')}"
         for p in known_papers if p.get("id")
     ) or "（无）"
     return _PROMPT.format(
@@ -84,32 +86,39 @@ def build_prompt(area: str, subtopic: dict, seed_titles: list[str], known_papers
     )
 
 
-def normalize_corpus(obj, subtopic_name: str) -> dict | None:
-    """把解析结果归一成 {subtopic, papers}。
-
-    兜底修复偶尔把一个对象拆成多个片段（列表），这里按 id 去重合并。
-    """
-    if isinstance(obj, dict) and "papers" in obj:
-        return obj
-    if isinstance(obj, list):
-        papers, seen = [], set()
-        for item in obj:
-            if not isinstance(item, dict):
-                continue
-            for p in item.get("papers", []):
-                pid = p.get("id")
-                if pid and pid not in seen:
-                    seen.add(pid)
-                    papers.append(p)
-        if papers:
-            return {"subtopic": subtopic_name, "papers": papers}
-    return None
+def normalize_corpus(obj, subtopic_name: str) -> dict:
+    obj = object_value(obj, "corpus")
+    papers = list_value(obj.get("papers"), "corpus.papers")
+    normalized, seen = [], set()
+    for i, paper in enumerate(papers):
+        paper = object_value(paper, f"papers[{i}]").copy()
+        for key in ("id", "title"):
+            paper[key] = text_value(paper.get(key), f"papers[{i}].{key}")
+        year = paper.get("year")
+        if year is not None and (type(year) is not int or not 1800 <= year <= 2100):
+            raise OutputError(f"papers[{i}].year: 需要有效整数年份或 null")
+        if type(paper.get("read_detail", False)) is not bool:
+            raise OutputError(f"papers[{i}].read_detail: 需要布尔值")
+        for key in ("problem", "method", "contribution", "limitation", "relevance"):
+            if not isinstance(paper.get(key, ""), str):
+                raise OutputError(f"papers[{i}].{key}: 需要字符串")
+        if paper["id"] not in seen:
+            normalized.append(paper)
+            seen.add(paper["id"])
+    return {**obj, "subtopic": subtopic_name, "papers": normalized[:MAX_CANDIDATES],
+            "covered_claims": strings(obj.get("covered_claims", []), "covered_claims"),
+            "open_questions": strings(obj.get("open_questions", []), "open_questions")}
 
 
 def search(harness, area: str, subtopic: dict, seed_titles: list[str], session_id: str,
            known_papers: list[dict] | None = None,
-           max_detail_reads: int = MAX_DETAIL_READS) -> tuple[dict | None, AgentResult]:
-    prompt = build_prompt(area, subtopic, seed_titles, known_papers or [], max_detail_reads)
-    result = run_agent(harness, prompt, session_id=session_id)
-    corpus = normalize_corpus(extract_json(result.text), subtopic.get("name", ""))
-    return corpus, result
+           max_detail_reads: int = MAX_DETAIL_READS) -> tuple[dict, AgentResult]:
+    from .validation import subtopic as validate_subtopic
+    subtopic = validate_subtopic(subtopic)
+    known = [p for p in known_papers or [] if p.get("read_detail") and p.get("provenance")]
+    prompt = build_prompt(area, subtopic, seed_titles, known, max_detail_reads)
+    result = run_agent(harness, prompt, session_id=session_id,
+                       tool_limits={"search_paper": len(subtopic["queries"]), "get_paper_detail": max_detail_reads},
+                       known_ids=[p["id"] for p in known])
+    corpus = normalize_corpus(extract_json(result.text), subtopic["name"])
+    return ground_corpus(corpus, result.events, result.session_id, known), result

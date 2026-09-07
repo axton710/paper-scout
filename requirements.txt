@@ -1,0 +1,2 @@
+deepseek-harness-sdk==0.1.2rc1
+json-repair==0.63.4

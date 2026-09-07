@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 reports/
 runs/
+dsh-home/
+workspace/
+experiments/*.log
+experiments/*_result.json
+experiments/*_judgements.json

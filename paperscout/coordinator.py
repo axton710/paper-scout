@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from .harness import AgentResult, extract_json, run_agent
+from .validation import object_value, list_value, strings, subtopic
 
 MAX_FOLLOWUPS = 2
 
@@ -41,23 +42,13 @@ _PROMPT = """你是多 Agent 文献调研流程中的 Coordinator。首轮 Searc
 
 
 def normalize_followups(obj) -> list[dict]:
-    if not isinstance(obj, dict):
-        return []
-    followups = obj.get("followups", [])
-    if not isinstance(followups, list):
-        return []
+    obj = object_value(obj, "coordinator")
+    tasks = list_value(obj.get("followups"), "coordinator.followups")
     normalized = []
-    for task in followups[:MAX_FOLLOWUPS]:
-        if not isinstance(task, dict) or not task.get("name") or not task.get("queries"):
-            continue
-        normalized.append({
-            "name": task["name"],
-            "rationale": task.get("rationale", ""),
-            "scope": task.get("scope", ""),
-            "exclude": task.get("exclude", ""),
-            "queries": task["queries"][:3],
-            "known_paper_ids": task.get("known_paper_ids", []),
-        })
+    for task in tasks[:MAX_FOLLOWUPS]:
+        item = subtopic(task, "followup", max_queries=3)
+        item["known_paper_ids"] = strings(task.get("known_paper_ids", []), "known_paper_ids")
+        normalized.append(item)
     return normalized
 
 

@@ -1,166 +1,155 @@
-"""端到端编排：plan → 各子方向 Searcher → Triage → 综述 → Gap+Verifier → 报告。
-
-已存在 reports/corpus_i.json 的子方向会复用缓存（省钱）；成本只累计本次真正发生的调用。
-"""
-
+"""隔离运行、有限补搜与阶段恢复：python run_pipeline.py --help。"""
 from __future__ import annotations
 
+import argparse
+import fcntl
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from pathlib import Path
 
 from paperscout.coordinator import coordinate
 from paperscout.corpus import build_evidence_board, merge_corpora, rank, render_compact
 from paperscout.gap import reflect_gaps
-from paperscout.harness import Cost, make_harness
+from paperscout.harness import make_harness
+from paperscout.planner import validate_plan
 from paperscout.report import assemble
+from paperscout.run_store import RunStore, code_fingerprint, write_json
 from paperscout.searcher import search
-from paperscout.synthesizer import synthesize
 
 ROOT = Path(__file__).resolve().parent
-REPORTS = ROOT / "reports"
+REPORTS = ROOT / 'reports'
 FOLLOWUP_DETAIL_READS = 2
 MAX_PARALLEL_SEARCHERS = 3
 
 
 def _annotate_corpus(corpus: dict, subtopic: dict, agent: str) -> dict:
-    """旧缓存没有协作字段，运行时补齐以保持已有检索结果可复用。"""
-    corpus = dict(corpus)
-    corpus["agent"] = agent
-    corpus.setdefault("scope", subtopic.get("scope", ""))
-    corpus.setdefault("exclude", subtopic.get("exclude", ""))
-    corpus.setdefault("queries", subtopic.get("queries", []))
-    corpus.setdefault("covered_claims", [])
-    corpus.setdefault("open_questions", [])
-    return corpus
+    return {**corpus, 'agent': agent, 'scope': subtopic.get('scope', ''),
+            'exclude': subtopic.get('exclude', ''), 'queries': subtopic.get('queries', [])}
 
 
 def _cache_matches_subtopic(corpus: dict, subtopic: dict) -> bool:
-    """检索边界变更后必须失效缓存，否则 Coordinator 会根据过期证据调度。"""
-    return (
-        corpus.get("subtopic") == subtopic.get("name")
-        and corpus.get("scope") == subtopic.get("scope", "")
-        and corpus.get("exclude") == subtopic.get("exclude", "")
-        and corpus.get("queries") == subtopic.get("queries", [])
-    )
+    return (corpus.get('subtopic') == subtopic.get('name')
+            and all(corpus.get(k) == subtopic.get(k, [] if k == 'queries' else '')
+                    for k in ('scope', 'exclude', 'queries')))
 
 
-def _search_with_own_harness(area: str, subtopic: dict, seed_titles: list[str], session_id: str,
-                              known_papers: list[dict] | None = None,
-                              max_detail_reads: int = 4):
-    # Harness 的 RPC 客户端不保证线程安全；每个并行 agent 使用独立进程隔离调用。
-    harness = make_harness()
-    with harness:
-        return search(
-            harness, area, subtopic, seed_titles, session_id,
-            known_papers=known_papers, max_detail_reads=max_detail_reads,
-        )
+def _search_with_own_harness(area, subtopic, seed_titles, session_id,
+                             known_papers=None, max_detail_reads=4, artifact_dir=None):
+    # RPC 客户端不共享；每个并行检索有独立运行时及预算。
+    with make_harness(artifact_dir=artifact_dir) as harness:
+        return search(harness, area, subtopic, seed_titles, session_id,
+                      known_papers=known_papers, max_detail_reads=max_detail_reads)
+
+
+def _search_round(store, plan, tasks, prefix, known=None, max_detail_reads=4):
+    corpora = [None] * len(tasks)
+    with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_SEARCHERS, len(tasks)) or 1) as pool:
+        pending = {}
+        for i, task in enumerate(tasks):
+            name = f'{prefix}_{i}'
+            def operation(task=task, name=name):
+                corpus, _ = _search_with_own_harness(
+                    plan['area'], task, [s['title'] for s in plan['seeds']], name,
+                    known or [], max_detail_reads, store.path)
+                return _annotate_corpus(corpus, task, name)
+            pending[pool.submit(store.stage, name, operation)] = i
+        for future in as_completed(pending):
+            i = pending[future]
+            try:
+                corpora[i] = future.result()
+            except Exception as error:
+                print(f'[{prefix}_{i}] 失败，报告将标注缺失方向: {error}', flush=True)
+    return [c for c in corpora if c is not None]
+
+
+def execute(store: RunStore, plan: dict) -> Path:
+    stages = store.manifest['stages']
+    # 首轮证据改变后，所有依赖该证据的阶段必须失效；完整阶段本身仍可复用。
+    if any(stages.get(f'corpus_{i}', {}).get('status') != 'complete' for i in range(len(plan['subtopics']))):
+        store.invalidate([name for name in stages if not name.startswith('corpus_')])
+    elif stages.get('followups', {}).get('status') != 'complete' or any(name.startswith('followup_corpus_') and value['status'] != 'complete' for name, value in stages.items()):
+        store.invalidate(['synthesis', 'gaps'])
+    if (store.path / 'gaps.json').exists() and any(v['verdict'] == 'unverified' for v in json.loads((store.path / 'gaps.json').read_text())['verified']):
+        store.invalidate(['gaps'])
+    first = _search_round(store, plan, plan['subtopics'], 'corpus')
+    if not first or not merge_corpora(first):
+        raise RuntimeError('首轮没有可用论文；已保留失败记录，修复后用 --resume 恢复')
+    board = build_evidence_board(first)
+    write_json(store.path / 'evidence_board.json', board)
+
+    def schedule():
+        with make_harness(artifact_dir=store.path, use_aminer=False) as harness:
+            tasks, _ = coordinate(harness, plan['area'], board)
+            return tasks
+    try:
+        followups = store.stage('followups', schedule)
+    except Exception as error:
+        print(f'[followups] 调度失败，交付首轮部分结果: {error}', flush=True)
+        followups = []
+    known = [p for p in merge_corpora(first) if p.get('read_detail')]
+    followup_corpora = _search_round(store, plan, followups, 'followup_corpus', known, FOLLOWUP_DETAIL_READS)
+    ranked = rank(merge_corpora(first + followup_corpora))
+    write_json(store.path / 'corpus.json', ranked)
+    write_json(store.path / 'final_evidence_board.json', build_evidence_board(first + followup_corpora))
+    corpus_text = render_compact(ranked)
+
+    def synthesis():
+        from paperscout.synthesizer import synthesize
+        with make_harness(max_tokens=32000, artifact_dir=store.path, use_aminer=False) as harness:
+            return synthesize(harness, plan['area'], corpus_text).text
+    survey = store.stage('synthesis', synthesis)
+
+    def gaps():
+        with make_harness(max_tokens=32000, artifact_dir=store.path, use_aminer=False) as harness:
+            raw, verified, _, rounds = reflect_gaps(harness, survey, corpus_text)
+            return {'raw': raw, 'verified': verified, 'rounds': rounds}
+    gap_result = store.stage('gaps', gaps)
+    incomplete = any(s['status'] != 'complete' for s in store.manifest['stages'].values())
+    incomplete |= any(v['verdict'] == 'unverified' for v in gap_result['verified'])
+    manifest = store.finish('partial' if incomplete else 'complete')
+    manifest['search_coverage'] = {'completed': len(first), 'planned': len(plan['subtopics']),
+                                 'followups_completed': len(followup_corpora), 'followups_planned': len(followups)}
+    write_json(store.path / 'manifest.json', manifest)
+    report = assemble(plan['area'], plan['seeds'], ranked, survey, gap_result['raw'],
+                      gap_result['verified'], store.cost()[0], gap_result['rounds'], manifest)
+    out = store.path / 'report.md'
+    out.write_text(report)
+    return out
 
 
 def main() -> None:
-    plan = json.loads((REPORTS / "plan.json").read_text())
-    area = plan["area"]
-    seeds = plan["seeds"]
-    seed_titles = [s["title"] for s in seeds]
-    total = Cost()
-
-    # M2-R1: 各子方向独立检索。缓存命中时保留原结果，未命中时并行探索。
-    corpora: list[dict | None] = [None] * len(plan["subtopics"])
-    pending = {}
-    with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL_SEARCHERS, len(plan["subtopics"]))) as pool:
-        for i, sub in enumerate(plan["subtopics"]):
-            cache = REPORTS / f"corpus_{i}.json"
-            if cache.exists():
-                cached = json.loads(cache.read_text())
-                if _cache_matches_subtopic(cached, sub):
-                    print(f"[{i}] 复用缓存 {cache.name}", flush=True)
-                    corpora[i] = _annotate_corpus(cached, sub, f"searcher-{i}")
-                    continue
-                print(f"[{i}] 缓存与当前子方向不匹配，重新检索", flush=True)
-            print(f"[{i}] 并行检索：{sub['name']}", flush=True)
-            future = pool.submit(_search_with_own_harness, area, sub, seed_titles, f"searcher-{i}")
-            pending[future] = (i, sub, cache)
-
-        for future in as_completed(pending):
-            i, sub, cache = pending[future]
-            corpus, result = future.result()
-            total.merge(result.cost)
-            if corpus:
-                corpus = _annotate_corpus(corpus, sub, f"searcher-{i}")
-                cache.write_text(json.dumps(corpus, ensure_ascii=False, indent=2))
-                corpora[i] = corpus
-            else:
-                print(f"[{i}] ⚠️ 解析失败，跳过")
-
-    first_round = [corpus for corpus in corpora if corpus]
-    board = build_evidence_board(first_round)
-    (REPORTS / "evidence_board.json").write_text(json.dumps(board, ensure_ascii=False, indent=2))
-
-    # M2-R2: 只在首轮的证据缺口上补搜，避免所有 Searcher 无差别重跑。
-    coordinator_harness = make_harness()
-    with coordinator_harness:
-        followups, coordination = coordinate(coordinator_harness, area, board)
-    total.merge(coordination.cost)
-    (REPORTS / "followups.json").write_text(json.dumps(followups, ensure_ascii=False, indent=2))
-    print(f"Coordinator 派发 {len(followups)} 个定向补搜任务", flush=True)
-
-    first_papers = {paper.get("id"): paper for paper in merge_corpora(first_round) if paper.get("id")}
-    followup_corpora = []
-    with ThreadPoolExecutor(max_workers=len(followups) or 1) as pool:
-        pending = {}
-        for i, task in enumerate(followups):
-            known_papers = [first_papers[pid] for pid in task.get("known_paper_ids", []) if pid in first_papers]
-            print(f"[补搜 {i}] {task['name']}", flush=True)
-            future = pool.submit(
-                _search_with_own_harness, area, task, seed_titles, f"followup-{i}",
-                known_papers, FOLLOWUP_DETAIL_READS,
-            )
-            pending[future] = (i, task)
-
-        for future in as_completed(pending):
-            i, task = pending[future]
-            corpus, result = future.result()
-            total.merge(result.cost)
-            if corpus:
-                corpus = _annotate_corpus(corpus, task, f"followup-{i}")
-                (REPORTS / f"followup_corpus_{i}.json").write_text(
-                    json.dumps(corpus, ensure_ascii=False, indent=2)
-                )
-                followup_corpora.append(corpus)
-            else:
-                print(f"[补搜 {i}] ⚠️ 解析失败，跳过")
-
-    all_corpora = first_round + followup_corpora
-    papers = merge_corpora(all_corpora)
-    ranked = rank(papers)
-    corpus_text = render_compact(ranked)
-    print(f"合并语料 {len(papers)} 篇，开始综述 ...", flush=True)
-
-    # 综述这步推理会吃掉不少输出预算，16000 会在思考阶段就被截断导致正文为空，给到 32000。
-    harness = make_harness(max_tokens=32000)
-    with harness:
-        syn = synthesize(harness, area, corpus_text)
-        total.merge(syn.cost)
-        survey = syn.text
-
-        # M5: Gap + Verifier + Reflection 闭环（生成→核验→回改重出→再核验）
-        print("找创新点 + 反思核验 ...", flush=True)
-        raw_gaps, verified, gap_cost, rounds = reflect_gaps(harness, survey, corpus_text)
-        total.merge(gap_cost)
-        print("  反思轮次：" + " → ".join(f"R{r['round']} {r['n']}条{r['verdicts']}" for r in rounds), flush=True)
-
-    # M6: 组装报告
-    report = assemble(area, seeds, ranked, survey, raw_gaps, verified, total, rounds)
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out = REPORTS / f"report-{ts}.md"
-    out.write_text(report)
-
-    print("\n========== 完成 ==========")
-    print(f"报告：{out}")
-    print(f"必读 {len(ranked)} 篇 | 创新点原始 {len(raw_gaps.get('gaps', []))} 条 | 核验 {len(verified)} 条")
-    print(f"本次成本：AMiner {total.aminer_calls} 次 {total.aminer_tools} | token 入 {total.input_tokens}/出 {total.output_tokens}")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--plan', type=Path, help='计划路径，默认 reports/plan.json')
+    parser.add_argument('--resume', type=Path, help='恢复 runs/<run-id>，复用成功阶段')
+    parser.add_argument('--output-dir', type=Path, default=ROOT / 'runs')
+    args = parser.parse_args()
+    if args.resume and args.plan:
+        parser.error('--resume 使用运行内的冻结计划，不能同时指定 --plan')
+    fingerprint = code_fingerprint(ROOT)
+    if args.resume:
+        store = RunStore(args.resume.resolve())
+        if store.manifest['fingerprint'] != fingerprint:
+            parser.error('代码或提示词已变化，请新建运行，避免复用旧证据')
+        plan = validate_plan(json.loads((store.path / 'plan.json').read_text()))
+        plan_hash = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+        if plan_hash != store.manifest['plan_hash']:
+            parser.error('运行内计划已被修改，请用 --plan 新建运行')
+    else:
+        plan = validate_plan(json.loads((args.plan or REPORTS / 'plan.json').read_text()))
+        store = RunStore.create(args.output_dir.resolve(), plan, fingerprint)
+    with (store.path / '.lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            parser.error('该运行已有进程执行，请等待结束')
+        try:
+            out = execute(store, plan)
+        except Exception:
+            store.finish('failed')
+            raise
+    print(f'报告: {out}\n状态: {store.manifest["status"]}\n恢复命令: python run_pipeline.py --resume {store.path}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

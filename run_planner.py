@@ -1,52 +1,27 @@
-"""M1 入口：跑 Planner，打印 plan + 成本，并 dump 事件供排查。"""
-
+"""生成检索计划；原始 Agent 输出保存在 runs/standalone/agents。"""
 from __future__ import annotations
 
-import json
-import sys
+import argparse
 from pathlib import Path
 
 from paperscout.harness import make_harness
 from paperscout.planner import plan
-
-SEEDS = [
-    "Training-Free Industrial Defect Generation with Diffusion Models",
-    "AnomalyDiffusion: Few-Shot Anomaly Image Generation with Diffusion Model",
-]
+from paperscout.run_store import write_json
 
 
-def main() -> None:
-    seeds = sys.argv[1:] or SEEDS
-    reports = Path(__file__).resolve().parent / "reports"
-    reports.mkdir(exist_ok=True)
-
-    harness = make_harness()
-    print(">>> 启动 runtime，运行 Planner ...", flush=True)
-    with harness:
-        plan_obj, result = plan(harness, seeds)
-
-    # dump 事件供排查 token 记账字段
-    (reports / "_debug_planner_events.json").write_text(
-        json.dumps(result.events, ensure_ascii=False, indent=2)
-    )
-
-    print("\n===== Planner 原始输出 =====")
-    print(result.text)
-
-    print("\n===== 解析出的 plan =====")
-    if plan_obj is None:
-        print("⚠️ 没能解析出 JSON，请看上面原始输出")
-    else:
-        (reports / "plan.json").write_text(json.dumps(plan_obj, ensure_ascii=False, indent=2))
-        print(json.dumps(plan_obj, ensure_ascii=False, indent=2))
-        print(f"\n(plan 已存到 {reports / 'plan.json'})")
-
-    c = result.cost
-    print("\n===== 成本 =====")
-    print(f"AMiner 调用次数: {c.aminer_calls}  明细: {c.aminer_tools}")
-    print(f"token: 输入 {c.input_tokens} / 输出 {c.output_tokens}")
-    print(f"finish_reason: {result.finish_reason}")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('seeds', nargs='+', help='1–2 个种子论文标题')
+    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parent / 'reports' / 'plan.json')
+    args = parser.parse_args()
+    if not 1 <= len(args.seeds) <= 2:
+        parser.error('需要 1–2 篇种子论文')
+    with make_harness() as harness:
+        obj, result = plan(harness, args.seeds)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    write_json(args.output, obj)
+    print(f'计划: {args.output}\n原始记录: {result.session_id}\n成本: {result.cost}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
