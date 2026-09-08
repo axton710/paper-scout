@@ -39,15 +39,32 @@ class RunStore:
         self.lock = threading.Lock()
 
     @classmethod
-    def create(cls, base: Path, plan: dict, fingerprint: str):
+    def create(cls, base: Path, fingerprint: str, plan: dict | None = None,
+               seed_titles: list[str] | None = None):
+        if (plan is None) == (seed_titles is None):
+            raise ValueError('新运行必须提供冻结计划或种子论文标题')
         name = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:8]
         path = base / name
         path.mkdir(parents=True)
-        write_json(path / 'plan.json', plan)
-        write_json(path / 'manifest.json', {'run_id': name, 'fingerprint': fingerprint,
-                   'plan_hash': hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest(),
-                   'status': 'running', 'stages': {}, 'cost_scope': '本运行内所有已记录尝试；外部 plan 的生成成本不包含'})
+        manifest = {'run_id': name, 'fingerprint': fingerprint, 'status': 'running', 'stages': {},
+                    'cost_scope': '本运行内所有已记录尝试；使用 --plan 时，该计划的生成成本不包含'}
+        if plan is not None:
+            write_json(path / 'plan.json', plan)
+            manifest['plan_hash'] = cls._plan_hash(plan)
+        else:
+            manifest['seed_titles'] = seed_titles
+        write_json(path / 'manifest.json', manifest)
         return cls(path)
+
+    @staticmethod
+    def _plan_hash(plan: dict) -> str:
+        return hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+
+    def set_plan(self, plan: dict) -> None:
+        """规划完成后冻结计划，恢复时据此阻止证据跨计划复用。"""
+        write_json(self.path / 'plan.json', plan)
+        self.manifest['plan_hash'] = self._plan_hash(plan)
+        write_json(self.path / 'manifest.json', self.manifest)
 
     def stage(self, name: str, operation):
         with self.lock:

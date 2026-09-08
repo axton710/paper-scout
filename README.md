@@ -58,18 +58,19 @@ DEEPSEEK_HARNESS_REPO=/absolute/path/to/deepseek-harness
 
 ## 运行
 
-以下命令会调用付费模型与 AMiner：
+以下一条命令会调用付费模型与 AMiner，并在同一个运行中完成规划、检索和报告生成：
 
 ```bash
-python run_planner.py \
+python run_pipeline.py \
   "Training-Free Industrial Defect Generation with Diffusion Models" \
   "AnomalyDiffusion: Few-Shot Anomaly Image Generation with Diffusion Model"
-python run_pipeline.py --plan reports/plan.json
 ```
 
 终端会打印 `runs/<run-id>/report.md`。每次新运行使用独立目录，不自动导入旧版 `reports/corpus_*.json`，避免跨计划混用证据。
 
 ```bash
+# 复用已经生成的计划
+python run_pipeline.py --plan path/to/plan.json
 # 从失败阶段恢复；成功阶段不重复产生费用
 python run_pipeline.py --resume runs/<run-id>
 # 单方向调试，独立保存在 runs/standalone/
@@ -84,7 +85,7 @@ python run_searcher.py 0 --plan reports/plan.json
 
 | 路径 | 用途 |
 |---|---|
-| `plan.json` / `manifest.json` | 冻结计划、阶段状态、失败原因、代码指纹、成本 |
+| `planning.json` / `plan.json` / `manifest.json` | 规划结果、冻结计划、阶段状态、失败原因、代码指纹、成本 |
 | `corpus_<i>.json` | 首轮子方向结果 |
 | `evidence_board.json` / `followups.json` | 首轮覆盖与补搜决策 |
 | `followup_corpus_<i>.json` | 补搜结果 |
@@ -95,7 +96,7 @@ python run_searcher.py 0 --plan reports/plan.json
 
 `corpus.json` 中每篇的 `provenance` 包含 session、tool_call_id、结果事件序号和原始论文记录；可据此核对 ID 与标题。此关联证明检索来源，不自动证明模型归纳的每句话正确。
 
-成本按本运行内所有尝试累计；外部计划的生成费用不含在 pipeline 成本中。AMiner 数字是运行时准入调用数，实际计费以服务账单为准。模型输入拆分为未缓存输入与缓存读取，避免混淆。
+成本按本运行内所有尝试累计；使用 `--plan` 时，该计划的生成费用不在本运行成本中。AMiner 数字是运行时准入调用数，实际计费以服务账单为准。模型输入拆分为未缓存输入与缓存读取，避免混淆。
 
 ## 局限
 

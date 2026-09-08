@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import fcntl
-import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -12,13 +11,12 @@ from paperscout.coordinator import coordinate
 from paperscout.corpus import build_evidence_board, merge_corpora, rank, render_compact
 from paperscout.gap import reflect_gaps
 from paperscout.harness import make_harness
-from paperscout.planner import validate_plan
+from paperscout.planner import plan as make_plan, validate_plan
 from paperscout.report import assemble
 from paperscout.run_store import RunStore, code_fingerprint, write_json
 from paperscout.searcher import search
 
 ROOT = Path(__file__).resolve().parent
-REPORTS = ROOT / 'reports'
 FOLLOWUP_DETAIL_READS = 2
 MAX_PARALLEL_SEARCHERS = 3
 
@@ -67,7 +65,7 @@ def execute(store: RunStore, plan: dict) -> Path:
     stages = store.manifest['stages']
     # 首轮证据改变后，所有依赖该证据的阶段必须失效；完整阶段本身仍可复用。
     if any(stages.get(f'corpus_{i}', {}).get('status') != 'complete' for i in range(len(plan['subtopics']))):
-        store.invalidate([name for name in stages if not name.startswith('corpus_')])
+        store.invalidate([name for name in stages if name != 'planning' and not name.startswith('corpus_')])
     elif stages.get('followups', {}).get('status') != 'complete' or any(name.startswith('followup_corpus_') and value['status'] != 'complete' for name, value in stages.items()):
         store.invalidate(['synthesis', 'gaps'])
     if (store.path / 'gaps.json').exists() and any(v['verdict'] == 'unverified' for v in json.loads((store.path / 'gaps.json').read_text())['verified']):
@@ -120,30 +118,53 @@ def execute(store: RunStore, plan: dict) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--plan', type=Path, help='计划路径，默认 reports/plan.json')
+    parser.add_argument('seeds', nargs='*', help='1–2 个种子论文标题；省略时需要 --plan 或 --resume')
+    parser.add_argument('--plan', type=Path, help='复用已有计划路径')
     parser.add_argument('--resume', type=Path, help='恢复 runs/<run-id>，复用成功阶段')
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'runs')
     args = parser.parse_args()
-    if args.resume and args.plan:
-        parser.error('--resume 使用运行内的冻结计划，不能同时指定 --plan')
+    if args.resume and (args.plan or args.seeds):
+        parser.error('--resume 使用运行内的冻结计划，不能同时提供种子论文或 --plan')
+    if args.plan and args.seeds:
+        parser.error('种子论文会自动生成计划，不能同时提供 --plan')
     fingerprint = code_fingerprint(ROOT)
+    plan = None
+    seed_titles = None
     if args.resume:
         store = RunStore(args.resume.resolve())
         if store.manifest['fingerprint'] != fingerprint:
             parser.error('代码或提示词已变化，请新建运行，避免复用旧证据')
-        plan = validate_plan(json.loads((store.path / 'plan.json').read_text()))
-        plan_hash = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
-        if plan_hash != store.manifest['plan_hash']:
-            parser.error('运行内计划已被修改，请用 --plan 新建运行')
+        plan_path = store.path / 'plan.json'
+        if plan_path.exists():
+            plan = validate_plan(json.loads(plan_path.read_text()))
+            if RunStore._plan_hash(plan) != store.manifest.get('plan_hash'):
+                parser.error('运行内计划已被修改，请用 --plan 新建运行')
+        else:
+            seed_titles = store.manifest.get('seed_titles')
+            if not isinstance(seed_titles, list) or not 1 <= len(seed_titles) <= 2 or not all(isinstance(title, str) and title.strip() for title in seed_titles):
+                parser.error('运行缺少可恢复的冻结计划或种子论文')
     else:
-        plan = validate_plan(json.loads((args.plan or REPORTS / 'plan.json').read_text()))
-        store = RunStore.create(args.output_dir.resolve(), plan, fingerprint)
+        if args.plan:
+            plan = validate_plan(json.loads(args.plan.read_text()))
+            store = RunStore.create(args.output_dir.resolve(), fingerprint, plan=plan)
+        else:
+            if not 1 <= len(args.seeds) <= 2:
+                parser.error('需要 1–2 篇种子论文，或使用 --plan / --resume')
+            seed_titles = args.seeds
+            store = RunStore.create(args.output_dir.resolve(), fingerprint, seed_titles=seed_titles)
     with (store.path / '.lock').open('w') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             parser.error('该运行已有进程执行，请等待结束')
         try:
+            if plan is None:
+                def planning():
+                    with make_harness(artifact_dir=store.path) as harness:
+                        generated, _ = make_plan(harness, seed_titles)
+                        return generated
+                plan = store.stage('planning', planning)
+                store.set_plan(plan)
             out = execute(store, plan)
         except Exception:
             store.finish('failed')
