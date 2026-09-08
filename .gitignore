@@ -6,6 +6,12 @@ reports/
 runs/
 dsh-home/
 workspace/
-experiments/*.log
-experiments/*_result.json
-experiments/*_judgements.json
+interview.html
+SPEC.md
+.github/
+tests/
+test_*.py
+step0_test.py
+experiments/
+*.md
+!README.md

@@ -20,9 +20,16 @@ def write_json(path: Path, value) -> None:
 
 def code_fingerprint(root: Path) -> str:
     files = sorted((root / 'paperscout').glob('*.py')) + sorted((root / 'runtime').glob('*.mjs'))
-    files += [root / 'run_pipeline.py', root / 'patches/aminer.patch.yml', root / 'requirements.txt']
-    files += sorted((root / 'config/sdk').iterdir())
-    return hashlib.sha256(b''.join(p.read_bytes() for p in files)).hexdigest()
+    files += [root / 'run_pipeline.py', root / 'dsh-src.sh', root / 'patches/aminer.patch.yml', root / 'requirements.txt']
+    files += sorted(path for path in (root / 'config/sdk').rglob('*') if path.is_file())
+    digest = hashlib.sha256()
+    for path in files:
+        # 路径也参与哈希，避免不同文件内容拼接后产生相同指纹。
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(b'\0')
+        digest.update(path.read_bytes())
+        digest.update(b'\0')
+    return digest.hexdigest()
 
 
 class RunStore:

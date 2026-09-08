@@ -97,42 +97,6 @@ python run_searcher.py 0 --plan reports/plan.json
 
 成本按本运行内所有尝试累计；外部计划的生成费用不含在 pipeline 成本中。AMiner 数字是运行时准入调用数，实际计费以服务账单为准。模型输入拆分为未缓存输入与缓存读取，避免混淆。
 
-## 示例与测试
-
-[固定报告示例](examples/report.md) 是离线生成的格式示例，并非新的真实调研结果。示例生成器、输入和报告共同纳入版本管理。
-
-以下检查无需 API Key、模型调用或 AMiner 网络连接：
-
-```bash
-python -m unittest discover -v
-node --test tests/budget.test.mjs
-python -m examples.generate
-```
-
-覆盖核验缺失、证据升级、真实被引档位、结构边界、来源校验、成本记录、阶段恢复和并发预算约束。CI 在 Python 3.10 / 3.13 上运行离线检查。
-
-## 评测
-
-离线审计一个新版运行：
-
-```bash
-python -m experiments.audit_traceability runs/<run-id>
-```
-
-新增对照实验会产生 API 费用，请显式运行：
-
-```bash
-# 同一首轮语料：预先确定的静态补搜 vs Coordinator 补搜
-python -m experiments.compare_budget --source-run runs/<run-id>
-# 对照组凭记忆列论文，再逐篇检索核对
-python -m experiments.exp2_hallucination \
-  --source-run runs/<run-id> --output-dir runs/memory-comparison
-```
-
-静态与自适应组匹配补搜搜索/详情调用额度、模型与每任务输出上限，Coordinator 费用单列。实际 token 和耗时仍需记录，不声称完全相同；可用 `--gold path.json` 提供人工相关论文 ID 列表来计算召回率。没有 gold set 时只报告新增论文数，召回率为 null。
-
-[历史实验记录](experiments/RESULTS.md) 保留了原始观察并标注口径修订：旧版 31/31 可追溯是预设值，不能算作逐篇验证；追加预算后论文增多，不能单独证明自适应调度优于同预算静态补搜。新版付费对照尚未执行。
-
 ## 局限
 
 - 检索范围取决于 AMiner 覆盖，搜索未命中不等于论文不存在。
